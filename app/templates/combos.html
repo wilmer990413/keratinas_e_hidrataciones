@@ -1,0 +1,92 @@
+<section id="tab-combos" class="tab-content hidden space-y-6">
+  <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div>
+      <h2 class="text-2xl font-bold text-gray-900 dark:text-white">Gestión de Combos</h2>
+      <p class="text-xs text-gray-500 dark:text-gray-400">Paquetes con precio personalizado por producto y descuento automático del stock</p>
+    </div>
+    <button onclick="abrirModalCombo()" class="inline-flex items-center gap-2 bg-brand-600 hover:bg-brand-700 text-white px-4 py-2.5 rounded-xl text-xs font-semibold shadow-md transition">
+      <i class="fa-solid fa-plus"></i> Nuevo Combo
+    </button>
+  </div>
+
+  <div class="bg-white dark:bg-cardbg rounded-2xl border border-gray-100 dark:border-gray-800 shadow-sm overflow-hidden flex flex-col">
+    <div class="p-4 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between">
+      <div>
+        <h3 class="font-bold text-sm text-gray-900 dark:text-white">Catálogo de Combos</h3>
+        <p class="text-[11px] text-gray-500 dark:text-gray-400">El stock disponible se calcula en tiempo real según las existencias de sus productos componentes.</p>
+      </div>
+    </div>
+    <div class="overflow-x-auto w-full">
+      <table class="w-full text-left text-xs">
+        <thead class="bg-gray-50 dark:bg-gray-800/80 text-gray-500 dark:text-gray-400 font-semibold uppercase tracking-wider border-b border-gray-100 dark:border-gray-800">
+          <tr>
+            <th class="p-4 whitespace-nowrap">Combo</th>
+            <th class="p-4 whitespace-nowrap">Productos incluidos</th>
+            <th class="p-4 whitespace-nowrap">Costo base</th>
+            <th class="p-4 whitespace-nowrap">Ganancia Admin</th>
+            <th class="p-4 whitespace-nowrap">Ganancia Inv.</th>
+            <th class="p-4 whitespace-nowrap">Precio Total</th>
+            <th class="p-4 whitespace-nowrap">Stock Disp.</th>
+            <th class="p-4 text-center whitespace-nowrap">Acciones</th>
+          </tr>
+        </thead>
+        <tbody id="tablaCombos" class="divide-y divide-gray-100 dark:divide-gray-800 text-gray-700 dark:text-gray-300"></tbody>
+      </table>
+    </div>
+    <div id="emptyCombosMsg" class="p-8 text-center text-xs text-gray-400 hidden">No hay combos registrados. Haz clic en "Nuevo Combo" para crear uno.</div>
+  </div>
+
+  <!-- Modal Combo -->
+  <div id="modalCombo" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-white dark:bg-cardbg rounded-2xl border border-gray-200 dark:border-gray-700 w-full max-w-4xl max-h-[90vh] overflow-y-auto p-6 shadow-2xl space-y-4">
+      <div class="flex justify-between items-center pb-3 border-b border-gray-100 dark:border-gray-800">
+        <div>
+          <h3 id="modalComboTitulo" class="font-bold text-lg text-gray-900 dark:text-white">Nuevo Combo</h3>
+          <p class="text-[11px] text-gray-400">Asigna un precio específico a cada producto dentro de este combo.</p>
+        </div>
+        <button onclick="cerrarModalCombo()" class="text-gray-400 hover:text-gray-600 dark:hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+      </div>
+
+      <form id="formComboCRUD" onsubmit="guardarComboCRUD(event)" class="space-y-4">
+        <input type="hidden" id="crudComboId">
+
+        <div>
+          <label class="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">Nombre del Combo *</label>
+          <input type="text" id="crudComboNombre" required placeholder="Ej: Combo Alisado + Shampoo" class="w-full px-3 py-2 text-sm bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500">
+        </div>
+
+        <div>
+          <div class="flex items-center justify-between mb-2">
+            <label class="text-xs font-semibold text-gray-700 dark:text-gray-300">Productos y precios del combo *</label>
+            <button type="button" onclick="agregarFilaProductoCombo()" class="text-xs text-brand-600 hover:text-brand-700 font-semibold flex items-center gap-1">
+              <i class="fa-solid fa-plus-circle"></i> Agregar producto
+            </button>
+          </div>
+          
+          <!-- Encabezados de la tabla del modal -->
+          <div class="hidden md:grid grid-cols-12 gap-2 px-2 pb-2 text-[10px] font-bold text-gray-500 uppercase tracking-wider">
+            <div class="col-span-3">Producto</div>
+            <div class="col-span-1 text-center">Cant</div>
+            <div class="col-span-2 text-center">Costo Base</div>
+            <div class="col-span-2 text-center">Gan. Admin</div>
+            <div class="col-span-2 text-center">Gan. Inv</div>
+            <div class="col-span-1 text-center">Flete</div>
+            <div class="col-span-1"></div>
+          </div>
+          
+          <div id="comboItemsContainer" class="space-y-2"></div>
+        </div>
+
+        <div class="flex justify-between items-center p-4 bg-brand-50 dark:bg-brand-950/30 rounded-xl border border-brand-200 dark:border-brand-900">
+          <span class="text-xs font-bold text-brand-700 dark:text-brand-300 uppercase">Precio Total Final (PVP)</span>
+          <span id="comboPreviewTotal" class="text-2xl font-black text-brand-600 dark:text-brand-400">$0</span>
+        </div>
+
+        <div class="flex justify-end gap-3 pt-3 border-t border-gray-100 dark:border-gray-800">
+          <button type="button" onclick="cerrarModalCombo()" class="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-xs font-semibold rounded-xl">Cancelar</button>
+          <button type="submit" class="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold rounded-xl shadow-md">Guardar Combo</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</section>

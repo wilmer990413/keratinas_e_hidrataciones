@@ -1,0 +1,33 @@
+<section id="tab-auxiliares" class="tab-content hidden space-y-6">
+  <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div>
+      <h2 class="text-2xl font-bold text-gray-900 dark:text-white">Módulo de Auxiliares</h2>
+      <p class="text-xs text-gray-500 dark:text-gray-400">Administra el catálogo de auxiliares que pueden participar en los procedimientos</p>
+    </div>
+    <button onclick="abrirModalAuxiliar()" class="inline-flex items-center gap-2 bg-brand-600 hover:bg-brand-700 text-white px-4 py-2.5 rounded-xl text-xs font-semibold shadow-md transition"><i class="fa-solid fa-plus"></i> Nuevo Auxiliar</button>
+  </div>
+
+  <div class="bg-white dark:bg-cardbg rounded-2xl border border-gray-100 dark:border-gray-800 shadow-sm overflow-hidden">
+    <div class="overflow-x-auto">
+      <table class="w-full text-left text-xs">
+        <thead class="bg-gray-50 dark:bg-gray-800/80 text-gray-500 dark:text-gray-400 font-semibold uppercase tracking-wider border-b border-gray-100 dark:border-gray-800">
+          <tr><th class="p-4">Nombre</th><th class="p-4">Documento</th><th class="p-4">Teléfono</th><th class="p-4">Estado</th><th class="p-4">Ingreso</th><th class="p-4 text-center">Acciones</th></tr>
+        </thead>
+        <tbody id="tablaAuxiliares" class="divide-y divide-gray-100 dark:divide-gray-800 text-gray-700 dark:text-gray-300"></tbody>
+      </table>
+    </div>
+    <div id="emptyAuxiliares" class="p-8 text-center text-xs text-gray-400 hidden">No hay auxiliares registrados.</div>
+  </div>
+
+  <div id="modalAuxiliar" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-white dark:bg-cardbg rounded-2xl border border-gray-200 dark:border-gray-700 w-full max-w-lg p-6 shadow-2xl space-y-4">
+      <div class="flex justify-between items-center pb-3 border-b border-gray-100 dark:border-gray-800"><h3 id="modalAuxTitulo" class="font-bold text-lg text-gray-900 dark:text-white">Nuevo Auxiliar</h3><button onclick="cerrarModalAuxiliar()" class="text-gray-400 hover:text-gray-600 dark:hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button></div>
+      <form id="formAuxiliar" onsubmit="guardarAuxiliar(event)" class="space-y-4">
+        <input type="hidden" id="auxId">
+        <div><label class="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">Nombre completo *</label><input id="auxNombre" required class="w-full px-3 py-2 text-sm bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl dark:text-white"></div>
+        <div class="grid grid-cols-2 gap-3"><div><label class="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">Documento</label><input id="auxDocumento" class="w-full px-3 py-2 text-sm bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl dark:text-white"></div><div><label class="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">Teléfono</label><input id="auxTelefono" class="w-full px-3 py-2 text-sm bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl dark:text-white"></div></div>
+        <div class="flex justify-end gap-3 pt-4 border-t border-gray-100 dark:border-gray-800"><button type="button" onclick="cerrarModalAuxiliar()" class="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-xs font-semibold rounded-xl">Cancelar</button><button class="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold rounded-xl shadow-md">Guardar Auxiliar</button></div>
+      </form>
+    </div>
+  </div>
+</section>

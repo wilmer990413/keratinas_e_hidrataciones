@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sistema de Gestión & POS - Keratinas & Hidrataciones by Erika</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: { 50: '#fdf2f8', 100: '#fce7f3', 200: '#fbcfe8', 400: '#f472b6', 500: '#ec4899', 600: '#db2777', 700: '#be185d', 900: '#831843', 950: '#500724' },
+            darkbg: '#0f172a', cardbg: '#1e293b'
+          }
+        }
+      }
+    }
+  </script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+
+<body
+  class="bg-gray-50 text-gray-800 dark:bg-darkbg dark:text-gray-100 min-h-screen flex flex-col font-sans transition-colors duration-200">
+
+  <header
+    class="bg-white dark:bg-cardbg border-b border-gray-200 dark:border-gray-800 px-6 py-3 flex justify-between items-center sticky top-0 z-30 shadow-sm">
+    <div class="flex items-center space-x-3">
+      <img src="{{ url_for('static', filename='img/logo_erika.png') }}" alt="Logo Erika"
+        class="w-11 h-11 rounded-full object-cover shadow-md border border-brand-500">
+      <div>
+        <h1 class="font-bold text-base leading-tight tracking-wide text-gray-900 dark:text-white">Keratinas &
+          Hidrataciones</h1>
+        <p class="text-xs text-gray-500 dark:text-gray-400">By Erika</p>
+      </div>
+    </div>
+    <div class="flex items-center space-x-4">
+      <div
+        class="bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800 px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-2">
+        <i class="fa-solid fa-database"></i><span>SQLite Conectado</span>
+      </div>
+      <div
+        class="bg-gray-100 dark:bg-gray-800 px-3 py-1.5 rounded-lg text-xs font-semibold text-gray-600 dark:text-gray-300 flex items-center gap-2">
+        <i class="fa-regular fa-calendar-check text-brand-500"></i><span id="currentDateDisplay">--/--/----</span>
+      </div>
+      <button onclick="toggleDarkMode()"
+        class="p-2 rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition">
+        <i class="fa-solid fa-moon dark:hidden"></i><i class="fa-solid fa-sun hidden dark:inline"></i>
+      </button>
+    </div>
+  </header>
+
+  <div class="flex flex-1 overflow-hidden">
+    <aside class="w-56 xl:w-64 bg-white dark:bg-cardbg border-r border-gray-200 dark:border-gray-800 flex flex-col justify-between shrink-0">
+      <nav class="p-4 space-y-1.5">
+        <button onclick="switchTab('dashboard')" id="nav-dashboard"
+          class="nav-btn w-full flex items-center space-x-3 px-4 py-3 rounded-xl font-medium text-sm transition text-brand-600 bg-brand-50 dark:bg-brand-900/30 dark:text-brand-500">
+          <i class="fa-solid fa-chart-pie w-5 text-center"></i><span>Dashboard General</span>
+        </button>
+        <button onclick="switchTab('servicios')" id="nav-servicios"
+          class="nav-btn w-full flex items-center space-x-3 px-4 py-3 rounded-xl font-medium text-sm text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition">
+          <i class="fa-solid fa-spa w-5 text-center"></i><span>Registro Servicios</span>
+        </button>
+        <button onclick="switchTab('productos')" id="nav-productos"
+          class="nav-btn w-full flex items-center space-x-3 px-4 py-3 rounded-xl font-medium text-sm text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition">
+          <i class="fa-solid fa-bag-shopping w-5 text-center"></i><span>Venta Productos</span>
+        </button>
+        <button onclick="switchTab('gestion-productos')" id="nav-gestion-productos"
+          class="nav-btn w-full flex items-center space-x-3 px-4 py-3 rounded-xl font-medium text-sm text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition">
+          <i class="fa-solid fa-boxes-stacked w-5 text-center"></i><span>Gestión de Productos</span>
+        </button>
+        <button onclick="switchTab('combos'); cargarCombos();" id="nav-combos"
+          class="nav-btn w-full flex items-center space-x-3 px-4 py-3 rounded-xl font-medium text-sm text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition">
+          <i class="fa-solid fa-boxes-packing w-5 text-center"></i><span>Gestión de Combos</span>
+        </button>
+        <button onclick="switchTab('auxiliares'); cargarAuxiliares();" id="nav-auxiliares"
+          class="nav-btn w-full flex items-center space-x-3 px-4 py-3 rounded-xl font-medium text-sm text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition">
+          <i class="fa-solid fa-users-gear w-5 text-center"></i><span>Auxiliares</span>
+        </button>
+        <button onclick="switchTab('nomina'); cargarNomina();" id="nav-nomina"
+          class="nav-btn w-full flex items-center space-x-3 px-4 py-3 rounded-xl font-medium text-sm text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition">
+          <i class="fa-solid fa-money-check-dollar w-5 text-center"></i><span>Nómina</span>
+        </button>
+        <button onclick="switchTab('reportes')" id="nav-reportes"
+          class="nav-btn w-full flex items-center space-x-3 px-4 py-3 rounded-xl font-medium text-sm text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition">
+          <i class="fa-solid fa-file-invoice-dollar w-5 text-center"></i><span>Cierre y Reportes</span>
+        </button>
+        <button onclick="switchTab('historico'); cargarHistorico(1);" id="nav-historico"
+          class="nav-btn w-full flex items-center space-x-3 px-4 py-3 rounded-xl font-medium text-sm text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition">
+          <i class="fa-solid fa-clock-rotate-left w-5 text-center"></i><span>Histórico de Ventas</span>
+        </button>
+      </nav>
+      <div class="p-4 border-t border-gray-200 dark:border-gray-800">
+        <div class="bg-gray-50 dark:bg-gray-800/60 rounded-xl p-3 flex items-center space-x-3">
+          <div class="w-8 h-8 rounded-full bg-brand-500 text-white flex items-center justify-center font-bold text-xs">
+            AD</div>
+          <div class="overflow-hidden">
+            <p class="text-xs font-semibold truncate text-gray-900 dark:text-white">Administradora</p>
+            <p class="text-[10px] text-gray-500 dark:text-gray-400 truncate">Turno Principal</p>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <main class="flex-1 min-w-0 overflow-y-auto p-4 sm:p-6 bg-gray-50 dark:bg-darkbg">
+      <div id="notificationAlert"
+        class="hidden mb-6 p-4 rounded-xl shadow-md border flex items-center justify-between transition-all">
+        <div class="flex items-center space-x-3">
+          <i id="notifIcon" class="fa-solid text-lg"></i><span id="notifText" class="text-sm font-medium"></span>
+        </div>
+        <button onclick="closeNotification()" class="text-gray-400 hover:text-gray-600 dark:hover:text-white"><i
+            class="fa-solid fa-xmark"></i></button>
+      </div>
+
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+
+  <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/servicios.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/productos.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/auxiliares.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/nomina.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/combos.js') }}"></script>
+</body>
+
+</html>

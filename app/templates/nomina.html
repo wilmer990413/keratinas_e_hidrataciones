@@ -1,0 +1,58 @@
+<section id="tab-nomina" class="tab-content hidden space-y-6">
+  <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div><h2 class="text-2xl font-bold text-gray-900 dark:text-white">Gestión de Nómina</h2><p class="text-xs text-gray-500 dark:text-gray-400">Calcula el pago de la Administradora y de cada auxiliar según los procedimientos realizados</p></div>
+    <button onclick="exportarNomina()" class="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl text-xs font-semibold shadow-md transition"><i class="fa-solid fa-file-excel"></i> Exportar Nómina</button>
+  </div>
+
+  <div class="bg-white dark:bg-cardbg p-4 rounded-2xl border border-gray-100 dark:border-gray-800 shadow-sm space-y-4">
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 items-end">
+      <div><label class="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">Fecha Inicio</label><input type="date" id="nominaInicio" class="w-full px-3 py-2 text-sm bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl dark:text-white"></div>
+      <div><label class="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">Fecha Fin</label><input type="date" id="nominaFin" class="w-full px-3 py-2 text-sm bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl dark:text-white"></div>
+      <button onclick="cargarNomina()" class="py-2 bg-brand-600 hover:bg-brand-700 text-white font-semibold text-xs rounded-xl shadow transition">Calcular Nómina</button>
+    </div>
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 items-end pt-4 border-t border-gray-100 dark:border-gray-800">
+      <div class="sm:col-span-2"><label class="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">Liquidar nómina a</label><select id="nominaPersona" class="w-full px-3 py-2 text-sm bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl dark:text-white"><option value="admin">Administradora</option></select></div>
+      <button onclick="generarDesprendible()" class="inline-flex items-center justify-center gap-2 py-2 bg-gray-900 hover:bg-black dark:bg-gray-700 dark:hover:bg-gray-600 text-white font-semibold text-xs rounded-xl shadow transition"><i class="fa-solid fa-receipt"></i> Generar Desprendible</button>
+    </div>
+  </div>
+
+
+  <div class="bg-white dark:bg-cardbg p-4 rounded-2xl border border-gray-100 dark:border-gray-800 shadow-sm space-y-4">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+      <div>
+        <h3 class="font-bold text-sm text-gray-900 dark:text-white">Descuentos a aplicar</h3>
+        <p class="text-[11px] text-gray-500 dark:text-gray-400">Los porcentajes se calculan sobre lo devengado por cada persona. Se aplican al hacer clic en "Calcular Nómina".</p>
+      </div>
+      <div class="flex gap-2">
+        <button type="button" onclick="limpiarDescuentos()" class="px-3 py-2 text-xs font-semibold text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-xl transition">Limpiar</button>
+        <button type="button" onclick="agregarDescuento()" class="inline-flex items-center gap-2 px-3 py-2 text-xs font-semibold bg-gray-900 hover:bg-black dark:bg-gray-700 dark:hover:bg-gray-600 text-white rounded-xl transition"><i class="fa-solid fa-plus"></i> Agregar descuento</button>
+      </div>
+    </div>
+    <div id="listaDescuentos" class="space-y-3"></div>
+    <div id="emptyDescuentos" class="text-center text-xs text-gray-400 py-2">Sin descuentos: se pagará el valor bruto. Use "Agregar descuento" para restar conceptos.</div>
+  </div>
+
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+    <div class="bg-white dark:bg-cardbg p-5 rounded-2xl border border-gray-100 dark:border-gray-800 shadow-sm"><p class="text-xs font-semibold text-gray-500 uppercase">Administradora (neto)</p><h3 id="nominaAdminTotal" class="text-2xl font-bold mt-1 text-brand-600">$0</h3><p id="nominaAdminServicios" class="text-[11px] text-gray-400 mt-2">0 servicios</p></div>
+    <div class="bg-white dark:bg-cardbg p-5 rounded-2xl border border-gray-100 dark:border-gray-800 shadow-sm"><p class="text-xs font-semibold text-gray-500 uppercase">Auxiliares (neto)</p><h3 id="nominaAuxTotal" class="text-2xl font-bold mt-1 text-blue-600">$0</h3><p id="nominaAuxDetalle" class="text-[11px] text-gray-400 mt-2">Bruto $0 − Desc. $0</p></div>
+    <div class="bg-white dark:bg-cardbg p-5 rounded-2xl border border-gray-100 dark:border-gray-800 shadow-sm"><p class="text-xs font-semibold text-gray-500 uppercase">Total a pagar (neto)</p><h3 id="nominaTotal" class="text-2xl font-bold mt-1 text-gray-900 dark:text-white">$0</h3><p id="nominaTotalDetalle" class="text-[11px] text-gray-400 mt-2">Bruto $0 − Descuentos $0</p></div>
+  </div>
+
+  <div class="bg-white dark:bg-cardbg rounded-2xl border border-gray-100 dark:border-gray-800 shadow-sm overflow-hidden">
+    <div class="p-4 border-b border-gray-100 dark:border-gray-800"><h3 class="font-bold text-sm text-gray-900 dark:text-white">Resumen por Auxiliar</h3></div>
+    <div class="overflow-x-auto"><table class="w-full text-left text-xs"><thead class="bg-gray-50 dark:bg-gray-800/80 text-gray-500 uppercase"><tr><th class="p-4">Auxiliar</th><th class="p-4">Procedimientos</th><th class="p-4">Bruto</th><th class="p-4">Descuentos</th><th class="p-4">Neto a Pagar</th></tr></thead><tbody id="tablaNominaAuxiliares" class="divide-y divide-gray-100 dark:divide-gray-800"></tbody></table></div>
+    <div id="emptyNominaAux" class="p-8 text-center text-xs text-gray-400 hidden">No hay pagos de auxiliares en el periodo.</div>
+  </div>
+
+  <div class="bg-white dark:bg-cardbg rounded-2xl border border-gray-100 dark:border-gray-800 shadow-sm overflow-hidden">
+    <div class="p-4 border-b border-gray-100 dark:border-gray-800"><h3 class="font-bold text-sm text-gray-900 dark:text-white">Descuentos Aplicados</h3></div>
+    <div class="overflow-x-auto"><table class="w-full text-left text-xs"><thead class="bg-gray-50 dark:bg-gray-800/80 text-gray-500 uppercase"><tr><th class="p-4">Concepto</th><th class="p-4">Descontado a</th><th class="p-4">Valor</th><th class="p-4">Monto descontado</th></tr></thead><tbody id="tablaDescuentosAplicados" class="divide-y divide-gray-100 dark:divide-gray-800"></tbody></table></div>
+    <div id="emptyDescuentosAplicados" class="p-8 text-center text-xs text-gray-400 hidden">No se aplicaron descuentos en este cálculo.</div>
+  </div>
+
+  <div class="bg-white dark:bg-cardbg rounded-2xl border border-gray-100 dark:border-gray-800 shadow-sm overflow-hidden">
+    <div class="p-4 border-b border-gray-100 dark:border-gray-800"><h3 class="font-bold text-sm text-gray-900 dark:text-white">Detalle de Procedimientos</h3></div>
+    <div class="overflow-x-auto"><table class="w-full text-left text-xs"><thead class="bg-gray-50 dark:bg-gray-800/80 text-gray-500 uppercase"><tr><th class="p-4">Fecha</th><th class="p-4">Cliente</th><th class="p-4">Procedimiento</th><th class="p-4">Auxiliar</th><th class="p-4">%</th><th class="p-4">Base Mano Obra</th><th class="p-4">Pago</th></tr></thead><tbody id="tablaDetalleNomina" class="divide-y divide-gray-100 dark:divide-gray-800"></tbody></table></div>
+    <div id="emptyDetalleNomina" class="p-8 text-center text-xs text-gray-400 hidden">No hay detalle para este periodo.</div>
+  </div>
+</section>

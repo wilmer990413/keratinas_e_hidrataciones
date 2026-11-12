@@ -1,0 +1,62 @@
+<section id="tab-historico" class="tab-content hidden space-y-6">
+  <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div>
+      <h2 class="text-2xl font-bold text-gray-900 dark:text-white">Histórico General de Ventas</h2>
+      <p class="text-xs text-gray-500 dark:text-gray-400">Consulta transacciones, filtra por rango de fechas y exporta a Excel</p>
+    </div>
+    <button onclick="exportarExcel()" class="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl text-xs font-semibold shadow-md transition">
+      <i class="fa-solid fa-file-excel"></i> Exportar a Excel
+    </button>
+  </div>
+
+  <div class="bg-white dark:bg-cardbg p-4 rounded-2xl border border-gray-100 dark:border-gray-800 shadow-sm grid grid-cols-1 sm:grid-cols-3 gap-4 items-end">
+    <div>
+      <label class="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">Fecha Inicio</label>
+      <input type="date" id="filtroFechaInicio" class="w-full px-3 py-2 text-sm bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 dark:text-white">
+    </div>
+    <div>
+      <label class="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">Fecha Fin</label>
+      <input type="date" id="filtroFechaFin" class="w-full px-3 py-2 text-sm bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 dark:text-white">
+    </div>
+    <div>
+      <label class="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">Tipo de venta</label>
+      <select id="filtroTipoHistorico" class="w-full px-3 py-2 text-sm bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl dark:text-white">
+        <option value="todos">Todas</option>
+        <option value="servicio">Servicios</option>
+        <option value="producto">Productos</option>
+      </select>
+    </div>
+    <div class="flex gap-2 sm:col-span-3">
+      <button onclick="cargarHistorico(1)" class="flex-1 py-2 bg-brand-600 hover:bg-brand-700 text-white font-semibold text-xs rounded-xl shadow transition">Filtrar</button>
+      <button onclick="limpiarFiltros()" class="px-3 py-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-xs font-semibold rounded-xl transition">Limpiar</button>
+    </div>
+  </div>
+
+  <div class="bg-white dark:bg-cardbg rounded-2xl border border-gray-100 dark:border-gray-800 shadow-sm overflow-hidden">
+    <div class="overflow-x-auto">
+      <table class="w-full text-left text-xs">
+        <thead class="bg-gray-50 dark:bg-gray-800/80 text-gray-500 dark:text-gray-400 font-semibold uppercase tracking-wider border-b border-gray-100 dark:border-gray-800">
+          <tr>
+            <th class="p-4">Fecha / Hora</th>
+            <th class="p-4">Cliente (Comprador)</th>
+            <th class="p-4">Detalle (Servicio / Producto)</th>
+            <th class="p-4">Total</th>
+            <th class="p-4">Ganancia Admin</th>
+            <th class="p-4">Pago Auxiliares</th>
+            <th class="p-4">Inversionista/Costo</th>
+          </tr>
+        </thead>
+        <tbody id="tablaHistoricoVentas" class="divide-y divide-gray-100 dark:divide-gray-800 text-gray-700 dark:text-gray-300"></tbody>
+      </table>
+    </div>
+    <div id="emptyHistoricoMsg" class="p-8 text-center text-xs text-gray-400 hidden">No se encontraron registros en este rango de fechas.</div>
+  </div>
+
+  <div class="flex justify-between items-center px-2">
+    <span id="paginacionInfo" class="text-xs text-gray-500 dark:text-gray-400">Mostrando página 1 de 1</span>
+    <div class="flex gap-2">
+      <button id="btnAnterior" onclick="cambiarPagina(-1)" class="px-3 py-1.5 bg-white dark:bg-cardbg border border-gray-200 dark:border-gray-700 rounded-lg text-xs font-semibold disabled:opacity-50" disabled>Anterior</button>
+      <button id="btnSiguiente" onclick="cambiarPagina(1)" class="px-3 py-1.5 bg-white dark:bg-cardbg border border-gray-200 dark:border-gray-700 rounded-lg text-xs font-semibold disabled:opacity-50" disabled>Siguiente</button>
+    </div>
+  </div>
+</section>

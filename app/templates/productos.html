@@ -1,0 +1,57 @@
+<section id="tab-productos" class="tab-content hidden space-y-6">
+  <div>
+    <h2 class="text-2xl font-bold text-gray-900 dark:text-white">Módulo de Venta de Productos</h2>
+    <p class="text-xs text-gray-500 dark:text-gray-400">Selecciona del catálogo deslizante y asigna el nombre del comprador</p>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <div class="lg:col-span-2 space-y-4">
+      <div class="bg-white dark:bg-cardbg p-4 rounded-2xl border border-gray-100 dark:border-gray-800 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div class="w-full sm:w-auto flex-1">
+          <label class="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1"><i class="fa-solid fa-user-tag text-brand-500"></i> Nombre de la Persona que Compra *</label>
+          <input type="text" id="nombreCompradorProd" placeholder="Ej: Carlos Pérez" class="w-full px-3 py-2 text-sm bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 dark:text-white">
+        </div>
+        <div class="w-full sm:w-auto flex-1">
+          <label class="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">Buscar Producto en Catálogo</label>
+          <input type="text" id="prodSearch" onkeyup="filtrarProductos()" placeholder="Filtrar..." class="w-full px-3 py-2 text-sm bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:outline-none dark:text-white">
+        </div>
+      </div>
+
+      <div class="bg-white dark:bg-cardbg p-4 rounded-2xl border border-gray-100 dark:border-gray-800 shadow-sm">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="text-xs font-bold uppercase tracking-wider text-gray-400"><i class="fa-solid fa-arrows-left-right"></i> Catálogo Desplazable</h3>
+          <div class="flex gap-1 bg-gray-100 dark:bg-gray-800 p-1 rounded-xl text-xs font-semibold">
+            <button type="button" onclick="filtrarTipoCatalogo('todos')" id="filtroCat-todos" class="px-2.5 py-1 rounded-lg bg-white dark:bg-cardbg text-brand-600 shadow-sm">Todos</button>
+            <button type="button" onclick="filtrarTipoCatalogo('productos')" id="filtroCat-productos" class="px-2.5 py-1 rounded-lg text-gray-500 hover:text-gray-900 dark:hover:text-white">Productos</button>
+            <button type="button" onclick="filtrarTipoCatalogo('combos')" id="filtroCat-combos" class="px-2.5 py-1 rounded-lg text-gray-500 hover:text-gray-900 dark:hover:text-white">Combos 🎁</button>
+          </div>
+        </div>
+        <div id="productGrid" class="carrusel-dos-filas"></div>
+      </div>
+    </div>
+
+    <div class="bg-white dark:bg-cardbg p-6 rounded-2xl border border-gray-100 dark:border-gray-800 shadow-sm flex flex-col justify-between space-y-4">
+      <div>
+        <h3 class="font-bold text-base text-gray-900 dark:text-white mb-4 flex items-center justify-between">
+          <span>Carrito de Productos</span><i class="fa-solid fa-basket-shopping text-brand-500"></i>
+        </h3>
+        <div id="cartItemsContainer" class="space-y-3 max-h-[320px] overflow-y-auto pr-1">
+          <p class="text-xs text-gray-400 text-center py-8">No has añadido ningún producto al carrito.</p>
+        </div>
+      </div>
+
+      <div class="pt-4 border-t border-gray-100 dark:border-gray-800 space-y-2">
+        <div class="flex justify-between text-xs text-gray-500"><span>Ganancia Admin:</span><span id="cartAdminTotal">$0</span></div>
+        <div class="flex justify-between text-xs text-gray-500"><span>Ganancia Inversionista:</span><span id="cartInvTotal">$0</span></div>
+        <div class="flex justify-between text-xs text-gray-500"><span>Inversión (costo base):</span><span id="cartInversionTotal">$0</span></div>
+        <div class="flex justify-between text-xs text-gray-500"><span>Fletes Totales:</span><span id="cartFleteTotal">$0</span></div>
+        <div class="flex justify-between text-base font-bold text-gray-900 dark:text-white pt-2 border-t border-gray-200 dark:border-gray-700">
+          <span>Total a Cobrar:</span><span id="cartGrandTotal" class="text-brand-600 dark:text-brand-400">$0</span>
+        </div>
+        <button onclick="finalizarVentaProductos()" class="w-full mt-4 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl shadow-md transition flex items-center justify-center gap-2">
+          <i class="fa-solid fa-check-circle"></i> Procesar Venta en SQLite
+        </button>
+      </div>
+    </div>
+  </div>
+</section>

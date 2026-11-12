@@ -1,0 +1,126 @@
+<section id="tab-servicios" class="tab-content hidden space-y-6">
+  <div>
+    <h2 class="text-2xl font-bold text-gray-900 dark:text-white">Registro de Servicios al Cliente</h2>
+    <p class="text-xs text-gray-500 dark:text-gray-400">Calculadora dinámica y asignación de auxiliares por procedimiento</p>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <div class="lg:col-span-2 bg-white dark:bg-cardbg p-6 rounded-2xl border border-gray-100 dark:border-gray-800 shadow-sm space-y-5">
+      <form id="formServicio" onsubmit="registrarServicio(event)" class="space-y-5">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">Nombre o Documento del Cliente *</label>
+            <input type="text" id="srvCliente" required placeholder="Ej: Maria Lopez" class="w-full px-3 py-2 text-sm bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-brand-500 focus:outline-none dark:text-white">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">Tipo de Servicio *</label>
+            <select id="srvTipo" onchange="actualizarFormularioServicio()" class="w-full px-3 py-2 text-sm bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl dark:text-white">
+              <option value="diagnostico">Diagnóstico (Fijo Admin)</option>
+              <option value="despunte">Despunte (Fijo Admin)</option>
+              <option value="capacitacion_virtual">Capacitación Virtual (Fijo Admin)</option>
+              <option value="capacitacion_presencial">Capacitación Presencial (Fijo Admin)</option>
+              <option value="hidratacion">Hidrataciones (Personalizable)</option>
+              <option value="keratina">Keratinas (Personalizable)</option>
+            </select>
+          </div>
+        </div>
+
+        <div id="dynamicServiceBox" class="p-4 bg-gray-50 dark:bg-gray-800/50 rounded-xl border border-gray-200 dark:border-gray-700/80 space-y-4">
+          <h4 class="text-xs font-bold uppercase tracking-wider text-brand-600 dark:text-brand-400 flex items-center gap-2">
+            <i class="fa-solid fa-sliders"></i> Configuración de Tarifas e Insumos
+          </h4>
+
+          <div id="boxValoresFijos" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label class="block text-xs text-gray-600 dark:text-gray-400 mb-1">Valor Fijo Administradora ($)</label>
+              <input type="number" id="srvValorFijoAdmin" value="30000" min="0" class="w-full px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl dark:text-white">
+            </div>
+          </div>
+
+          <div id="boxHidrataciones" class="hidden space-y-4">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label class="block text-xs text-gray-600 dark:text-gray-400 mb-1">Modalidad de Atención</label>
+                <select id="hidModalidad" onchange="actualizarAsignacionAuxiliares(); calcularServicioLive()" class="w-full px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl dark:text-white">
+                  <option value="normal">Con Auxiliar</option>
+                  <option value="admin_solo">Solo Administradora</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-xs text-gray-600 dark:text-gray-400 mb-1">Insumos Especiales Extra</label>
+                <select id="hidInsumoExtra" onchange="calcularServicioLive()" class="w-full px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl dark:text-white">
+                  <option value="no">Estándar (Materia 1 + Materia 2)</option>
+                  <option value="si">Especial (+ Materia Extra)</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2">
+              <div><label class="block text-[11px] text-gray-500">Materia 1 ($)</label><input type="number" id="hidMateria1" value="15000" min="0" onchange="calcularServicioLive()" class="w-full p-2 text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg dark:text-white"></div>
+              <div><label class="block text-[11px] text-gray-500">Materia 2 ($)</label><input type="number" id="hidMateria2" value="10000" min="0" onchange="calcularServicioLive()" class="w-full p-2 text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg dark:text-white"></div>
+              <div id="boxMateriaExtra" class="hidden"><label class="block text-[11px] text-gray-500">Materia Extra ($)</label><input type="number" id="hidMateriaExtra" value="8000" min="0" onchange="calcularServicioLive()" class="w-full p-2 text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg dark:text-white"></div>
+              <div><label class="block text-[11px] text-gray-500">Pago / Ganancia Admin ($)</label><input type="number" id="hidValorAdmin" value="25000" min="0" onchange="calcularServicioLive()" class="w-full p-2 text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg dark:text-white"></div>
+            </div>
+          </div>
+
+          <div id="boxKeratinas" class="hidden space-y-4">
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div>
+                <label class="block text-xs text-gray-600 dark:text-gray-400 mb-1">Modalidad Personal</label>
+                <select id="kerModalidad" onchange="actualizarKeratinaUI()" class="w-full px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl dark:text-white">
+                  <option value="admin">Solo Administradora</option>
+                  <option value="admin_aux">Admin + 1 Auxiliar</option>
+                  <option value="admin_n_aux">Admin + N Auxiliares</option>
+                </select>
+              </div>
+              <div id="boxKerNumAux" class="hidden">
+                <label class="block text-xs text-gray-600 dark:text-gray-400 mb-1">Cant. Auxiliares (N)</label>
+                <input type="number" id="kerNumAux" value="2" min="1" max="10" onchange="actualizarAsignacionAuxiliares(); calcularServicioLive()" class="w-full px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl dark:text-white">
+              </div>
+              <div><label class="block text-xs text-gray-600 dark:text-gray-400 mb-1">Materia Prima ($)</label><input type="number" id="kerMateriaPrima" value="35000" min="0" onchange="calcularServicioLive()" class="w-full px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl dark:text-white"></div>
+            </div>
+
+            <div>
+              <label class="block text-xs text-gray-600 dark:text-gray-400 mb-1">Ganancia / Valor Administradora ($)</label>
+              <input type="number" id="kerValorAdmin" value="45000" min="0" onchange="calcularServicioLive()" class="w-full px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl dark:text-white">
+            </div>
+          </div>
+
+          <div id="boxAsignacionAuxiliares" class="hidden space-y-3 pt-2 border-t border-gray-200 dark:border-gray-700">
+            <div>
+              <h5 class="text-xs font-bold text-gray-800 dark:text-gray-200">Auxiliares que participaron</h5>
+              <p class="text-[11px] text-gray-500">La administradora selecciona quién realizó el procedimiento y define manualmente su porcentaje de mano de obra.</p>
+            </div>
+            <div id="listaAsignacionAuxiliares" class="space-y-2"></div>
+            <div class="flex justify-between items-center text-xs bg-white dark:bg-gray-800 rounded-xl px-3 py-2 border border-gray-200 dark:border-gray-700">
+              <span class="text-gray-500">Porcentaje total asignado</span>
+              <strong id="porcentajeAuxTotal" class="text-brand-600">0%</strong>
+            </div>
+          </div>
+        </div>
+
+        <div class="p-4 bg-brand-50/50 dark:bg-brand-950/20 border border-brand-200 dark:border-brand-900/50 rounded-xl flex flex-col sm:flex-row justify-between items-center gap-4">
+          <div>
+            <span class="text-xs uppercase tracking-wider font-semibold text-brand-700 dark:text-brand-400">Precio Total Calculado</span>
+            <p id="srvCalculadoFormula" class="text-[11px] text-gray-500 dark:text-gray-400">Fórmula activa: Fijo Admin</p>
+          </div>
+          <div class="text-right"><span id="srvPrecioTotalPreview" class="text-2xl font-black text-brand-600 dark:text-brand-400">$30.000</span></div>
+        </div>
+
+        <button type="submit" class="w-full py-3 bg-brand-600 hover:bg-brand-700 text-white font-semibold rounded-xl shadow-md transition flex items-center justify-center gap-2">
+          <i class="fa-solid fa-plus-circle"></i> Registrar Servicio
+        </button>
+      </form>
+    </div>
+
+    <div class="bg-white dark:bg-cardbg p-6 rounded-2xl border border-gray-100 dark:border-gray-800 shadow-sm space-y-4">
+      <h3 class="font-bold text-sm text-gray-900 dark:text-white flex items-center gap-2"><i class="fa-solid fa-calculator text-brand-500"></i> Fórmulas de Servicio</h3>
+      <div class="space-y-3 text-xs text-gray-600 dark:text-gray-300">
+        <div class="p-2.5 bg-gray-50 dark:bg-gray-800/60 rounded-lg"><p class="font-semibold text-gray-800 dark:text-gray-200">Hidrataciones Total:</p><p class="text-[11px] text-gray-500">Auxiliar + Admin + Materia 1 + Materia 2 (+ Extra si aplica)</p></div>
+        <div class="p-2.5 bg-gray-50 dark:bg-gray-800/60 rounded-lg"><p class="font-semibold text-gray-800 dark:text-gray-200">Keratinas Admin & N Aux:</p><p class="text-[11px] text-gray-500">Materia Prima + Admin + (Auxiliar × N)</p></div>
+        <div class="p-2.5 bg-gray-50 dark:bg-gray-800/60 rounded-lg"><p class="font-semibold text-gray-800 dark:text-gray-200">Porcentaje auxiliar:</p><p class="text-[11px] text-gray-500">Cada porcentaje se aplica sobre la mano de obra total (Admin + Auxiliares). La suma debe ser menor al 100%.</p></div>
+        <div class="p-2.5 bg-gray-50 dark:bg-gray-800/60 rounded-lg"><p class="font-semibold text-gray-800 dark:text-gray-200">Fijos:</p><p class="text-[11px] text-gray-500">100% para Administradora y sin auxiliar.</p></div>
+      </div>
+    </div>
+  </div>
+</section>
