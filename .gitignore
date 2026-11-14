@@ -32,7 +32,6 @@ env.bak/
 venv.bak/
 
 # --- Base de Datos y Datos Locales (SQLite) ---
-*.db
 *.sqlite
 *.sqlite3
 *.db-journal
