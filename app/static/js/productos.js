@@ -492,8 +492,26 @@ function abrirModalProducto(prodId = null) {
   document.getElementById('crudNombre').value = prod ? prod.nombre : '';
   document.getElementById('crudStock').value = prod ? (prod.stock ?? 0) : '0';
 
+  const invSelect = document.getElementById('crudInversionista');
+  if (invSelect) {
+    const invList = (state.inversionistas || []).filter(i => i.activo);
+    invSelect.innerHTML = '<option value="">Sin inversionista (Propio)</option>' +
+      invList.map(i => `<option value="${escapeHtml(i.id)}" data-pct="${i.porcentajeGanancia}" ${prod && prod.inversionistaId === i.id ? 'selected' : ''}>${escapeHtml(i.nombre)} (${Number(i.porcentajeGanancia).toFixed(1)}%)</option>`).join('');
+  }
+  alCambiarInversionistaEnProducto();
+
   renderPreciosPresentacionesEnModal(prod);
   document.getElementById('modalProducto').classList.remove('hidden');
+}
+
+function alCambiarInversionistaEnProducto() {
+  const invSelect = document.getElementById('crudInversionista');
+  const display = document.getElementById('crudInversionistaPctDisplay');
+  if (!invSelect || !display) return;
+  const selected = invSelect.options[invSelect.selectedIndex];
+  const pct = selected?.getAttribute('data-pct') || '0';
+  display.value = selected?.value ? `${Number(pct).toFixed(1)}%` : '0%';
+  // La casilla "Ganancia Inv." de cada presentación NO se calcula sola: se escribe a mano.
 }
 
 function editarProducto(id) {
@@ -536,6 +554,7 @@ async function guardarProductoCRUD(event) {
   const id = document.getElementById('crudProdId').value.trim();
   const nombre = document.getElementById('crudNombre').value.trim();
   const stock = parseInt(document.getElementById('crudStock').value, 10);
+  const inversionistaId = document.getElementById('crudInversionista')?.value || null;
 
   if (!nombre) {
     showAlert('El nombre del producto es obligatorio.', 'error');
@@ -565,6 +584,7 @@ async function guardarProductoCRUD(event) {
     id: id || undefined,
     nombre: nombre,
     stock: stock,
+    inversionistaId: inversionistaId,
     presentaciones: presentacionesData
   };
 
@@ -614,8 +634,14 @@ function renderTablaGestionProductos() {
     const badges = (prod.presentaciones || []).map(p => `<span class="inline-flex items-center px-2 py-0.5 rounded-full bg-brand-50 text-brand-600 dark:bg-brand-900/30 dark:text-brand-300 mr-1 mb-1">${escapeHtml(p.nombre)} (x${p.factor})</span>`).join('');
     const unidad = (prod.presentaciones || []).find(p => Number(p.factor) === 1);
     const pvpUnidad = unidad ? Number(unidad.basePrice) + Number(unidad.adminGain) + Number(unidad.invGain) + Number(unidad.flete) : 0;
+    const invBadge = prod.inversionistaNombre
+      ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300">
+          <i class="fa-solid fa-user-tie text-[9px]"></i>${escapeHtml(prod.inversionistaNombre)} (${Number(prod.inversionistaPct || 0).toFixed(1)}%)
+        </span>`
+      : `<span class="text-gray-400 text-[11px]">— Sin inv. —</span>`;
     tr.innerHTML = `
       <td class="p-4 font-bold text-gray-900 dark:text-white">${escapeHtml(prod.nombre)}</td>
+      <td class="p-4">${invBadge}</td>
       <td class="p-4 text-xs">${badges || '<span class="text-gray-400">Sin presentaciones</span>'}</td>
       <td class="p-4 font-bold ${Number(prod.stock) <= 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-900 dark:text-white'}">${Number(prod.stock).toLocaleString('es-CO')} ud</td>
       <td class="p-4 font-semibold text-emerald-600">$${pvpUnidad.toLocaleString('es-CO')}</td>
@@ -639,14 +665,14 @@ function renderTablaPresentaciones() {
   (state.presentaciones || []).forEach(p => {
     const tr = document.createElement('tr');
     tr.className = "hover:bg-gray-50 dark:hover:bg-gray-800/40 transition";
-    const estandar = ['unidad', 'media_docena', 'docena'].includes(p.id);
+    const estandar = false;
     tr.innerHTML = `
       <td class="p-3 font-semibold text-gray-900 dark:text-white">${escapeHtml(p.nombre)}</td>
       <td class="p-3">x${p.factor}</td>
       <td class="p-3"><span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${p.activa ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300' : 'bg-gray-100 text-gray-500'}">${p.activa ? 'Activa' : 'Inactiva'}</span></td>
       <td class="p-3 text-center">
         <button onclick="editarPresentacion('${p.id}')" class="text-blue-500 hover:text-blue-700 p-1" title="Editar"><i class="fa-solid fa-pen-to-square"></i></button>
-        ${!estandar && p.activa ? `<button onclick="eliminarPresentacion('${p.id}')" class="text-red-400 hover:text-red-600 p-1" title="Desactivar"><i class="fa-solid fa-trash-can"></i></button>` : ''}
+        ${p.activa ? `<button onclick="eliminarPresentacion('${p.id}')" class="text-red-400 hover:text-red-600 p-1" title="Eliminar"><i class="fa-solid fa-trash-can"></i></button>` : ''}
       </td>`;
     tbody.appendChild(tr);
   });
@@ -688,11 +714,11 @@ async function guardarPresentacionCRUD(e) {
 }
 
 async function eliminarPresentacion(id) {
-  if (!confirm('¿Desactivar esta presentación? Dejará de aparecer para las nuevas ventas.')) return;
+  if (!confirm('¿Eliminar esta presentación? Dejará de estar disponible para los productos y nuevas ventas. Las ventas históricas conservarán el nombre registrado.')) return;
   const res = await fetch(`/api/presentacion/${id}`, { method: 'DELETE' });
   const result = await res.json().catch(() => ({}));
   if (res.ok) {
-    showAlert('Presentación desactivada.', 'info');
+    showAlert('Presentación eliminada del catálogo.', 'info');
     if (typeof cargarEstadoBackend === 'function') cargarEstadoBackend();
   } else {
     showAlert(result.error || 'No fue posible desactivar.', 'error');

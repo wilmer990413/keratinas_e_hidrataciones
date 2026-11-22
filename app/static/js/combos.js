@@ -1,24 +1,56 @@
 // Manejo del estado y CRUD de combos
 
+function presentacionesComboProducto(prod) {
+  return (prod?.presentaciones || []).filter(p => Number(p.activa ?? 1) === 1);
+}
+
+function obtenerPresentacionCombo(prod, presId) {
+  return presentacionesComboProducto(prod).find(p => String(p.presentacionId) === String(presId)) || null;
+}
+
 function calcularTotalComboLive() {
   let totalBase = 0, totalAdmin = 0, totalInv = 0, totalFlete = 0;
-  
-  document.querySelectorAll('.combo-item-row').forEach(row => {
-    const cant = parseFloat(row.querySelector('.combo-prod-cant')?.value) || 0;
-    const base = parseFloat(row.querySelector('.combo-prod-base')?.value) || 0;
-    const admin = parseFloat(row.querySelector('.combo-prod-admin')?.value) || 0;
-    const inv = parseFloat(row.querySelector('.combo-prod-inv')?.value) || 0;
-    const flete = parseFloat(row.querySelector('.combo-prod-flete')?.value) || 0;
 
-    totalBase += base * cant;
-    totalAdmin += admin * cant;
-    totalInv += inv * cant;
-    totalFlete += flete * cant;
+  document.querySelectorAll('.combo-item-row').forEach(row => {
+    const cant = Math.max(parseInt(row.querySelector('.combo-prod-cant')?.value, 10) || 0, 0);
+    totalBase += (parseFloat(row.querySelector('.combo-prod-base')?.value) || 0) * cant;
+    totalAdmin += (parseFloat(row.querySelector('.combo-prod-admin')?.value) || 0) * cant;
+    totalInv += (parseFloat(row.querySelector('.combo-prod-inv')?.value) || 0) * cant;
+    totalFlete += (parseFloat(row.querySelector('.combo-prod-flete')?.value) || 0) * cant;
   });
 
   const total = totalBase + totalAdmin + totalInv + totalFlete;
   const el = document.getElementById('comboPreviewTotal');
   if (el) el.textContent = `$${total.toLocaleString('es-CO')}`;
+}
+
+function actualizarPreciosPresentacionCombo(fila, forzarCatalogo = true) {
+  const prodId = fila.querySelector('.combo-prod-select')?.value || '';
+  const presId = fila.querySelector('.combo-prod-presentacion')?.value || '';
+  const prod = (state.catalogoProductos || []).find(p => String(p.id) === String(prodId));
+  const pres = obtenerPresentacionCombo(prod, presId);
+  if (!pres) return;
+
+  fila.dataset.factor = pres.factor;
+  const labelUnidades = fila.querySelector('.combo-prod-unidades');
+  const cantidad = Math.max(parseInt(fila.querySelector('.combo-prod-cant')?.value, 10) || 1, 1);
+  if (labelUnidades) labelUnidades.textContent = `${cantidad * Number(pres.factor || 1)} ud`;
+
+  if (forzarCatalogo) {
+    fila.querySelector('.combo-prod-base').value = pres.basePrice ?? 0;
+    fila.querySelector('.combo-prod-admin').value = pres.adminGain ?? 0;
+    fila.querySelector('.combo-prod-inv').value = pres.invGain ?? 0;
+    fila.querySelector('.combo-prod-flete').value = pres.flete ?? 0;
+  }
+  calcularTotalComboLive();
+}
+
+function opcionesPresentacionesCombo(prod, selectedId = '') {
+  const pres = presentacionesComboProducto(prod);
+  if (!pres.length) return '<option value="">-- Sin presentaciones --</option>';
+  return '<option value="">-- Presentación --</option>' + pres.map(p =>
+    `<option value="${escapeHtml(p.presentacionId)}" ${String(p.presentacionId) === String(selectedId) ? 'selected' : ''}>${escapeHtml(p.nombre)} (x${p.factor})</option>`
+  ).join('');
 }
 
 function abrirModalCombo(comboId = null) {
@@ -35,7 +67,15 @@ function abrirModalCombo(comboId = null) {
   document.getElementById('crudComboNombre').value = combo ? combo.nombre : '';
 
   if (combo && combo.items?.length) {
-    combo.items.forEach(it => agregarFilaProductoCombo(it.productoId, it.cantidad, it.costoBase, it.adminGain, it.invGain, it.flete));
+    combo.items.forEach(it => agregarFilaProductoCombo(
+      it.productoId,
+      it.presentacionId,
+      it.cantidad,
+      it.costoBase,
+      it.adminGain,
+      it.invGain,
+      it.flete
+    ));
   } else {
     agregarFilaProductoCombo();
   }
@@ -48,7 +88,7 @@ function cerrarModalCombo() {
   document.getElementById('modalCombo')?.classList.add('hidden');
 }
 
-function agregarFilaProductoCombo(selectedProdId = '', cantidad = 1, costoBase = 0, adminGain = 0, invGain = 0, flete = 0) {
+function agregarFilaProductoCombo(selectedProdId = '', selectedPresentacionId = '', cantidad = 1, costoBase = null, adminGain = null, invGain = null, flete = null) {
   const container = document.getElementById('comboItemsContainer');
   if (!container) return;
 
@@ -57,11 +97,26 @@ function agregarFilaProductoCombo(selectedProdId = '', cantidad = 1, costoBase =
   fila.className = "combo-item-row grid grid-cols-2 md:grid-cols-12 gap-2 items-center bg-gray-50 dark:bg-gray-800/40 p-2 rounded-xl border border-gray-100 dark:border-gray-700";
 
   const options = prods.map(p => `
-    <option value="${p.id}" ${p.id === selectedProdId ? 'selected' : ''}>
+    <option value="${escapeHtml(p.id)}" ${String(p.id) === String(selectedProdId) ? 'selected' : ''}>
       ${escapeHtml(p.nombre)} (Stock: ${p.stock} ud)
     </option>
   `).join('');
 
+  const prodInicial = prods.find(p => String(p.id) === String(selectedProdId));
+  const presIniciales = presentacionesComboProducto(prodInicial);
+  const presInicial = selectedPresentacionId
+    ? obtenerPresentacionCombo(prodInicial, selectedPresentacionId)
+    : presIniciales[0];
+  const presId = presInicial?.presentacionId || selectedPresentacionId || '';
+  const preciosIniciales = presInicial || {};
+
+  const base = costoBase !== null && costoBase !== undefined ? costoBase : (preciosIniciales.basePrice ?? 0);
+  const admin = adminGain !== null && adminGain !== undefined ? adminGain : (preciosIniciales.adminGain ?? 0);
+  const inv = invGain !== null && invGain !== undefined ? invGain : (preciosIniciales.invGain ?? 0);
+  const fl = flete !== null && flete !== undefined ? flete : (preciosIniciales.flete ?? 0);
+  const factor = Number(presInicial?.factor || 1);
+
+  fila.dataset.factor = factor;
   fila.innerHTML = `
     <div class="col-span-2 md:col-span-3">
       <select class="combo-prod-select w-full px-2 py-2 text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg dark:text-white">
@@ -69,20 +124,26 @@ function agregarFilaProductoCombo(selectedProdId = '', cantidad = 1, costoBase =
         ${options}
       </select>
     </div>
-    <div class="md:col-span-1">
-      <input type="number" min="1" step="1" value="${cantidad}" class="combo-prod-cant w-full px-2 py-2 text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-center dark:text-white" placeholder="Cant" oninput="calcularTotalComboLive()">
-    </div>
-    <div class="md:col-span-2">
-      <input type="number" min="0" step="any" value="${costoBase}" class="combo-prod-base w-full px-2 py-2 text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-center dark:text-white" placeholder="Costo Base" oninput="calcularTotalComboLive()">
-    </div>
-    <div class="md:col-span-2">
-      <input type="number" min="0" step="any" value="${adminGain}" class="combo-prod-admin w-full px-2 py-2 text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-center dark:text-white" placeholder="G. Admin" oninput="calcularTotalComboLive()">
-    </div>
-    <div class="md:col-span-2">
-      <input type="number" min="0" step="any" value="${invGain}" class="combo-prod-inv w-full px-2 py-2 text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-center dark:text-white" placeholder="G. Inv" oninput="calcularTotalComboLive()">
+    <div class="col-span-2 md:col-span-2">
+      <select class="combo-prod-presentacion w-full px-2 py-2 text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg dark:text-white">
+        ${opcionesPresentacionesCombo(prodInicial, presId)}
+      </select>
     </div>
     <div class="md:col-span-1">
-      <input type="number" min="0" step="any" value="${flete}" class="combo-prod-flete w-full px-2 py-2 text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-center dark:text-white" placeholder="Flete" oninput="calcularTotalComboLive()">
+      <input type="number" min="1" step="1" value="${cantidad}" class="combo-prod-cant w-full px-2 py-2 text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-center dark:text-white" placeholder="Cant" oninput="actualizarUnidadesComboFila(this.closest('.combo-item-row')); calcularTotalComboLive()">
+      <div class="text-[9px] text-gray-400 text-center mt-1"><span class="combo-prod-unidades">${Number(cantidad || 1) * factor} ud</span></div>
+    </div>
+    <div class="md:col-span-1">
+      <input type="number" min="0" step="any" value="${base}" class="combo-prod-base w-full px-2 py-2 text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-center dark:text-white" placeholder="Costo Base" oninput="calcularTotalComboLive()">
+    </div>
+    <div class="md:col-span-1">
+      <input type="number" min="0" step="any" value="${admin}" class="combo-prod-admin w-full px-2 py-2 text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-center dark:text-white" placeholder="G. Admin" oninput="calcularTotalComboLive()">
+    </div>
+    <div class="md:col-span-1">
+      <input type="number" min="0" step="any" value="${inv}" class="combo-prod-inv w-full px-2 py-2 text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-center dark:text-white" placeholder="G. Inv" oninput="calcularTotalComboLive()">
+    </div>
+    <div class="md:col-span-1">
+      <input type="number" min="0" step="any" value="${fl}" class="combo-prod-flete w-full px-2 py-2 text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-center dark:text-white" placeholder="Flete" oninput="calcularTotalComboLive()">
     </div>
     <div class="md:col-span-1 flex justify-center">
       <button type="button" onclick="this.closest('.combo-item-row').remove(); calcularTotalComboLive();" class="text-red-400 hover:text-red-600 p-1 bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700"><i class="fa-solid fa-trash-can"></i></button>
@@ -90,23 +151,33 @@ function agregarFilaProductoCombo(selectedProdId = '', cantidad = 1, costoBase =
   `;
   container.appendChild(fila);
 
-  // Auto-completar precios si el usuario selecciona un producto nuevo
-  const select = fila.querySelector('.combo-prod-select');
-  select.addEventListener('change', (e) => {
-    const prodId = e.target.value;
-    if (!prodId) return;
-    const prod = prods.find(p => p.id === prodId);
-    if (prod) {
-       const unidad = prod.presentaciones?.find(p => p.factor === 1) || prod.presentaciones?.[0];
-       if (unidad) {
-         fila.querySelector('.combo-prod-base').value = unidad.basePrice;
-         fila.querySelector('.combo-prod-admin').value = unidad.adminGain;
-         fila.querySelector('.combo-prod-inv').value = unidad.invGain;
-         fila.querySelector('.combo-prod-flete').value = unidad.flete;
-       }
+  const selectProducto = fila.querySelector('.combo-prod-select');
+  const selectPresentacion = fila.querySelector('.combo-prod-presentacion');
+
+  selectProducto.addEventListener('change', () => {
+    const prod = prods.find(p => String(p.id) === String(selectProducto.value));
+    selectPresentacion.innerHTML = opcionesPresentacionesCombo(prod);
+    const primera = presentacionesComboProducto(prod)[0];
+    if (primera) {
+      selectPresentacion.value = primera.presentacionId;
+      actualizarPreciosPresentacionCombo(fila, true);
     }
-    calcularTotalComboLive();
   });
+
+  selectPresentacion.addEventListener('change', () => actualizarPreciosPresentacionCombo(fila, true));
+
+  // Si se creó una fila vacía, deja los precios en cero hasta seleccionar producto.
+  calcularTotalComboLive();
+}
+
+function actualizarUnidadesComboFila(fila) {
+  const prodId = fila.querySelector('.combo-prod-select')?.value || '';
+  const prod = (state.catalogoProductos || []).find(p => String(p.id) === String(prodId));
+  const pres = obtenerPresentacionCombo(prod, fila.querySelector('.combo-prod-presentacion')?.value || '');
+  const cantidad = Math.max(parseInt(fila.querySelector('.combo-prod-cant')?.value, 10) || 1, 1);
+  const unidades = cantidad * Number(pres?.factor || 1);
+  const el = fila.querySelector('.combo-prod-unidades');
+  if (el) el.textContent = `${unidades} ud`;
 }
 
 async function guardarComboCRUD(event) {
@@ -121,6 +192,7 @@ async function guardarComboCRUD(event) {
     if (prodId && cant > 0) {
       items.push({
         productoId: prodId,
+        presentacionId: row.querySelector('.combo-prod-presentacion')?.value || '',
         cantidad: cant,
         costoBase: parseFloat(row.querySelector('.combo-prod-base')?.value) || 0,
         adminGain: parseFloat(row.querySelector('.combo-prod-admin')?.value) || 0,
@@ -195,7 +267,7 @@ function renderTablaCombos() {
     tr.className = "hover:bg-gray-50 dark:hover:bg-gray-800/40 transition";
     const prodsBadges = (c.items || []).map(i => `
       <span class="inline-flex items-center px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300 text-[10px] font-medium mr-1 mb-1">
-        ${i.cantidad}x ${escapeHtml(i.productoNombre)}
+        ${i.cantidad}x ${escapeHtml(i.productoNombre)} · ${escapeHtml(i.presentacionNombre || "Presentación")}
       </span>
     `).join('');
 

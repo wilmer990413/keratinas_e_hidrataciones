@@ -21,6 +21,7 @@
         <thead class="bg-gray-50 dark:bg-gray-800/80 text-gray-500 dark:text-gray-400 font-semibold uppercase tracking-wider border-b border-gray-100 dark:border-gray-800">
           <tr>
             <th class="p-4">Producto</th>
+            <th class="p-4">Inversionista</th>
             <th class="p-4">Presentaciones</th>
             <th class="p-4">Stock único</th>
             <th class="p-4">PVP Unidad</th>
@@ -79,6 +80,24 @@
           <div>
             <label class="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">Stock actual (unidades) *</label>
             <input type="number" id="crudStock" required min="0" step="1" value="0" class="w-full px-3 py-2 text-sm bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500">
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
+              <i class="fa-solid fa-hand-holding-dollar text-purple-500 mr-1"></i> Inversionista Asociado (Opcional)
+            </label>
+            <select id="crudInversionista" onchange="alCambiarInversionistaEnProducto()" class="w-full px-3 py-2 text-sm bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500">
+              <option value="">Sin inversionista (Propio)</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
+              % Ganancia del Inversionista
+            </label>
+            <input type="text" id="crudInversionistaPctDisplay" readonly placeholder="0%" class="w-full px-3 py-2 text-sm bg-gray-100 dark:bg-gray-800/60 border border-gray-200 dark:border-gray-700 rounded-xl text-gray-500 dark:text-gray-400 cursor-not-allowed">
+            <p class="text-[10px] text-gray-400 mt-1">Configurado en el módulo Inversionistas.</p>
           </div>
         </div>
 

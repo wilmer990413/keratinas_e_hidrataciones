@@ -1,11 +1,12 @@
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from pathlib import Path
+import os
 import re
 import sqlite3
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-DB_NAME = BASE_DIR / "peluqueria_pos.db"
+DB_NAME = BASE_DIR / os.getenv("DATABASE_PATH", "peluqueria_pos.db")
 COLOMBIA_TZ = ZoneInfo("America/Bogota")
 
 
@@ -15,9 +16,13 @@ def now_colombia():
 
 
 def get_db_connection():
-  conn = sqlite3.connect(str(DB_NAME))
+  """Establece conexión a SQLite con modo WAL y timeout para prevenir bloqueos por concurrencia."""
+  conn = sqlite3.connect(str(DB_NAME), timeout=20.0)
   conn.row_factory = sqlite3.Row
   conn.execute("PRAGMA foreign_keys = ON")
+  conn.execute("PRAGMA journal_mode = WAL")
+  conn.execute("PRAGMA busy_timeout = 5000")
+  conn.execute("PRAGMA synchronous = NORMAL")
   return conn
 
 
@@ -284,6 +289,49 @@ def _asegurar_presentaciones_para_productos(cursor):
         )
 
 
+def _crear_tablas_agenda(cursor):
+  """Agenda de citas. Los estados iniciales solo se crean la primera vez (el usuario puede
+  cambiarlos o borrarlos; no se vuelven a crear)."""
+  primera_vez = cursor.execute(
+      "SELECT 1 FROM sqlite_master WHERE type='table' AND name='citas_estados'").fetchone() is None
+  cursor.execute("""
+        CREATE TABLE IF NOT EXISTS citas_estados (
+            id TEXT PRIMARY KEY,
+            nombre TEXT NOT NULL UNIQUE COLLATE NOCASE,
+            color TEXT NOT NULL,
+            orden INTEGER NOT NULL DEFAULT 0
+        )
+    """)
+  cursor.execute("""
+        CREATE TABLE IF NOT EXISTS citas (
+            id TEXT PRIMARY KEY,
+            fecha TEXT NOT NULL,
+            hora TEXT,
+            cliente TEXT NOT NULL,
+            servicio TEXT,
+            estado_id TEXT REFERENCES citas_estados(id) ON DELETE RESTRICT,
+            notas TEXT,
+            creada_en TEXT
+        )
+    """)
+  cursor.execute("CREATE INDEX IF NOT EXISTS idx_citas_fecha ON citas(fecha)")
+  # Personas asignadas a una cita: 'ADMIN' (la administradora) o el id de una auxiliar.
+  cursor.execute("""
+        CREATE TABLE IF NOT EXISTS cita_responsables (
+            cita_id TEXT NOT NULL REFERENCES citas(id) ON DELETE CASCADE,
+            responsable_id TEXT NOT NULL,
+            PRIMARY KEY (cita_id, responsable_id)
+        )
+    """)
+  cursor.execute("CREATE INDEX IF NOT EXISTS idx_cita_resp_persona ON cita_responsables(responsable_id)")
+  if primera_vez:
+    cursor.executemany(
+        "INSERT INTO citas_estados (id, nombre, color, orden) VALUES (?,?,?,?)",
+        [("EST-PENDIENTE", "Pendiente", "#FFFF00", 1),
+         ("EST-CONFIRMADA", "Confirmada", "#92D050", 2),
+         ("EST-CANCELADA", "Cancelada", "#FFA6A6", 3)])
+
+
 def init_db():
   conn = get_db_connection()
   cursor = conn.cursor()
@@ -343,6 +391,18 @@ def init_db():
     """)
 
   cursor.execute("""
+      CREATE TABLE IF NOT EXISTS inversionistas (
+          id TEXT PRIMARY KEY,
+          nombre TEXT NOT NULL,
+          documento TEXT,
+          telefono TEXT,
+          porcentaje_ganancia REAL NOT NULL DEFAULT 0,
+          activo INTEGER NOT NULL DEFAULT 1,
+          fecha_registro TEXT
+      )
+  """)
+
+  cursor.execute("""
       CREATE TABLE IF NOT EXISTS combos (
           id TEXT PRIMARY KEY,
           nombre TEXT NOT NULL,
@@ -359,6 +419,7 @@ def init_db():
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           combo_id TEXT NOT NULL,
           producto_id TEXT NOT NULL,
+          presentacion_id TEXT,
           cantidad INTEGER NOT NULL CHECK (cantidad > 0),
           costo_base REAL NOT NULL DEFAULT 0,
           admin_gain REAL NOT NULL DEFAULT 0,
@@ -397,6 +458,13 @@ def init_db():
             presentacion_id TEXT,
             presentacion_nombre TEXT,
             factor_presentacion INTEGER,
+            inversionista_id TEXT,
+            inversionista_nombre TEXT,
+            costo_inversion REAL DEFAULT 0,
+            ganancia_inversionista REAL DEFAULT 0,
+            precio_unitario REAL DEFAULT 0,
+            ganancia_admin REAL DEFAULT 0,
+            flete REAL DEFAULT 0,
             FOREIGN KEY (transaccion_id) REFERENCES transacciones(id) ON DELETE CASCADE
         )
     """)
@@ -448,7 +516,89 @@ def init_db():
       cursor.execute(f"ALTER TABLE combo_items ADD COLUMN {col} REAL NOT NULL DEFAULT 0")
     except sqlite3.OperationalError:
       pass
+  try:
+    cursor.execute("ALTER TABLE combo_items ADD COLUMN presentacion_id TEXT")
+  except sqlite3.OperationalError:
+    pass
+  # Las filas antiguas de combos se asocian a la primera presentación activa del producto.
+  try:
+    cursor.execute("""
+      UPDATE combo_items
+      SET presentacion_id = (
+        SELECT pp.presentacion_id
+        FROM producto_presentaciones pp
+        JOIN presentaciones pr ON pr.id = pp.presentacion_id
+        WHERE pp.producto_id = combo_items.producto_id
+          AND pp.activa = 1 AND pr.activa = 1
+        ORDER BY pr.orden, pr.factor, pr.nombre COLLATE NOCASE
+        LIMIT 1
+      )
+      WHERE presentacion_id IS NULL
+    """)
+  except sqlite3.OperationalError:
+    pass
   # ----------------------------------
+
+  # --- COLUMNAS PARA INVERSIONISTAS ---
+  try:
+    cursor.execute("ALTER TABLE productos ADD COLUMN inversionista_id TEXT")
+  except sqlite3.OperationalError:
+    pass
+
+  try:
+    cursor.execute("ALTER TABLE transacciones ADD COLUMN inversionista_id TEXT")
+  except sqlite3.OperationalError:
+    pass
+
+  for columna, definicion in (
+      ("inversionista_id", "TEXT"),
+      ("inversionista_nombre", "TEXT"),
+      ("costo_inversion", "REAL DEFAULT 0"),
+      ("ganancia_inversionista", "REAL DEFAULT 0"),
+      ("precio_unitario", "REAL DEFAULT 0"),
+      ("ganancia_admin", "REAL DEFAULT 0"),
+      ("flete", "REAL DEFAULT 0"),
+  ):
+    try:
+      cursor.execute(f"ALTER TABLE venta_items ADD COLUMN {columna} {definicion}")
+    except sqlite3.OperationalError:
+      pass
+  # -----------------------------------
+
+  # Completa precios por línea para ventas históricas que fueron creadas antes
+  # de guardar el desglose de precio de cada producto. Se reparte el componente
+  # administradora + flete proporcionalmente a las unidades, conservando el total
+  # de la transacción.
+  ventas_antiguas = cursor.execute("""
+      SELECT t.id, COALESCE(t.admin_share, 0) AS admin_share, COALESCE(t.flete_total, 0) AS flete_total
+      FROM transacciones t
+      WHERE t.tipo_servicio LIKE 'Prod:%'
+        AND EXISTS (SELECT 1 FROM venta_items vi WHERE vi.transaccion_id = t.id)
+  """).fetchall()
+  for venta in ventas_antiguas:
+    items = cursor.execute("""
+        SELECT id, unidades, COALESCE(costo_inversion,0) AS costo_inversion,
+               COALESCE(ganancia_inversionista,0) AS ganancia_inversionista
+        FROM venta_items WHERE transaccion_id=? ORDER BY id
+    """, (venta["id"],)).fetchall()
+    pendientes = [x for x in items if float(x["precio_unitario"] if "precio_unitario" in x.keys() else 0) <= 0]
+    if not pendientes:
+      continue
+    total_unidades = sum(max(int(x["unidades"] or 0), 0) for x in items)
+    if total_unidades <= 0:
+      continue
+    reparto = float(venta["admin_share"] or 0) + float(venta["flete_total"] or 0)
+    for item in pendientes:
+      unidades = max(int(item["unidades"] or 0), 1)
+      admin_linea = reparto * unidades / total_unidades
+      base = float(item["costo_inversion"] or 0)
+      gan_inv = float(item["ganancia_inversionista"] or 0)
+      total_linea = base + gan_inv + admin_linea
+      precio_unitario = total_linea / unidades
+      cursor.execute(
+          "UPDATE venta_items SET precio_unitario=?, ganancia_admin=?, flete=? WHERE id=?",
+          (round(precio_unitario, 4), round(admin_linea, 2), 0, item["id"]),
+      )
 
   if cursor.execute("SELECT COUNT(*) FROM productos").fetchone()[0] == 0:
     productos_iniciales = [
@@ -486,6 +636,7 @@ def init_db():
   _corregir_totales_ventas_productos(cursor)
   _migrar_presentaciones(cursor)
   _asegurar_presentaciones_para_productos(cursor)
+  _crear_tablas_agenda(cursor)
 
   try:
     cursor.execute("UPDATE venta_items SET producto_id = (SELECT producto_id FROM producto_id_aliases a WHERE a.old_producto_id = venta_items.producto_id) WHERE producto_id IN (SELECT old_producto_id FROM producto_id_aliases)")

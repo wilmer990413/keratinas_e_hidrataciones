@@ -32,14 +32,17 @@ def listar_auxiliares():
 @api_auxiliares_bp.route("/api/auxiliar", methods=["POST", "PUT"])
 def guardar_auxiliar():
   data = request.get_json() or {}
-  nombre = str(data.get("nombre", "")).strip()
-  documento = str(data.get("documento", "")).strip()
-  telefono = str(data.get("telefono", "")).strip()
-  activo = 1 if data.get("activo", True) else 0
-  auxiliar_id = str(data.get("id", "")).strip() or f"AUX-{int(datetime.now().timestamp() * 1000)}"
+  from app.schemas import AuxiliarGuardarSchema, parse_payload
+  try:
+    val = parse_payload(AuxiliarGuardarSchema, data)
+  except ValueError as err:
+    return jsonify({"error": str(err)}), 400
 
-  if not nombre:
-    return jsonify({"error": "El nombre del auxiliar es obligatorio."}), 400
+  nombre = val.nombre
+  documento = val.documento or ""
+  telefono = val.telefono or ""
+  activo = 1 if (val.activo if val.activo is not None else True) else 0
+  auxiliar_id = str(val.id or "").strip() or f"AUX-{int(datetime.now().timestamp() * 1000)}"
 
   conn = get_db_connection()
   try:

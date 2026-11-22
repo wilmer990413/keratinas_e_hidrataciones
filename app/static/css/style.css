@@ -36,6 +36,28 @@ body {
   }
 }
 
+/* Agenda de citas: al imprimir solo se muestra el calendario del mes visible (html.imprimiendo-agenda lo pone agenda.js) */
+.solo-impresion { display: none; }
+@media print {
+  @page agenda { size: A4 landscape; margin: 8mm; }
+  html.imprimiendo-agenda #agendaImprimible { page: agenda; }
+  html.imprimiendo-agenda, html.imprimiendo-agenda body { height: auto !important; overflow: visible !important; background: #fff !important; display: block !important; }
+  html.imprimiendo-agenda body > header,
+  html.imprimiendo-agenda #mobileMenu,
+  html.imprimiendo-agenda aside,
+  html.imprimiendo-agenda #notificationAlert,
+  html.imprimiendo-agenda .no-print-agenda,
+  html.imprimiendo-agenda #tab-agenda > *:not(#agendaImprimible) { display: none !important; }
+  html.imprimiendo-agenda #appShell, html.imprimiendo-agenda main { display: block !important; height: auto !important; overflow: visible !important; padding: 0 !important; background: #fff !important; }
+  html.imprimiendo-agenda #agendaImprimible { display: block !important; box-shadow: none !important; border: 0 !important; border-radius: 0 !important; padding: 0 !important; background: #fff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  html.imprimiendo-agenda #agendaImprimible * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  html.imprimiendo-agenda #agendaImprimible .solo-impresion { display: block; }
+  html.imprimiendo-agenda #agendaImprimible .overflow-x-auto { overflow: visible !important; }
+  html.imprimiendo-agenda #agendaImprimible .min-w-\[760px\] { min-width: 0 !important; }
+  html.imprimiendo-agenda #agendaImprimible .agenda-dia { min-height: 58px !important; break-inside: avoid; page-break-inside: avoid; cursor: default; background: #fff; }
+  html.imprimiendo-agenda #agendaImprimible .agenda-cita { box-shadow: none !important; }
+}
+
 /* Desprendible de nómina: al imprimir solo se muestra el recibo */
 @media print {
   @page { margin: 12mm; }

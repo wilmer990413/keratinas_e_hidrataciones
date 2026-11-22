@@ -36,27 +36,20 @@ def _leer_descuentos(request):
   if not isinstance(data, list):
     raise ValueError("El formato de los descuentos no es válido.")
 
+  from app.schemas import DescuentoNominaSchema, parse_payload
   limpios = []
   for i, d in enumerate(data, start=1):
-    if not isinstance(d, dict):
-      raise ValueError("El formato de los descuentos no es válido.")
-    concepto = str(d.get("concepto") or "").strip() or f"Descuento {i}"
-    tipo = d.get("tipo")
-    if tipo not in ("porcentaje", "monto"):
-      raise ValueError(f"El descuento '{concepto}' tiene un tipo inválido.")
-    try:
-      valor = float(d.get("valor"))
-    except (TypeError, ValueError):
-      raise ValueError(f"El descuento '{concepto}' no tiene un valor numérico.")
-    if not math.isfinite(valor) or valor < 0:
-      raise ValueError(f"El valor del descuento '{concepto}' debe ser un número mayor o igual a 0.")
-    if tipo == "porcentaje" and valor > 100:
-      raise ValueError(f"El descuento '{concepto}' no puede superar el 100%.")
-    destino = str(d.get("destino") or "").strip()
+    val = parse_payload(DescuentoNominaSchema, d)
+    destino = str(val.destino or val.aplicarA or "").strip()
     if destino not in (DESTINO_ADMIN, DESTINO_TODOS_AUX) and not (
         destino.startswith(PREFIJO_AUX) and len(destino) > len(PREFIJO_AUX)):
-      raise ValueError(f"El descuento '{concepto}' no tiene un destinatario válido.")
-    limpios.append({"concepto": concepto, "tipo": tipo, "valor": valor, "destino": destino})
+      raise ValueError(f"El descuento '{val.concepto}' no tiene un destinatario válido.")
+    limpios.append({
+        "concepto": val.concepto or f"Descuento {i}",
+        "tipo": "porcentaje" if val.tipo == "porcentaje" else "monto",
+        "valor": val.valor,
+        "destino": destino,
+    })
   return limpios
 
 

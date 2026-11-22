@@ -40,10 +40,13 @@ def _descontar_stock(conn, items):
     rel = conn.execute(
       """
       SELECT pr.id AS producto_id, pr.nombre AS producto_nombre, pr.stock,
-             pp.presentacion_id, p.nombre AS presentacion_nombre, p.factor
+             pr.inversionista_id, inv.nombre AS inversionista_nombre,
+             pp.presentacion_id, p.nombre AS presentacion_nombre, p.factor,
+             pp.base_price, pp.admin_gain, pp.inv_gain, pp.flete
       FROM productos pr
       JOIN producto_presentaciones pp ON pp.producto_id = pr.id AND pp.activa = 1
       JOIN presentaciones p ON p.id = pp.presentacion_id AND p.activa = 1
+      LEFT JOIN inversionistas inv ON inv.id = pr.inversionista_id
       WHERE pr.id = ? AND pp.presentacion_id = ?
       """, (pid, pres_id)
     ).fetchone()
@@ -51,6 +54,8 @@ def _descontar_stock(conn, items):
       raise ValueError("El producto o la presentación seleccionada ya no están disponibles. Actualice la página e intente de nuevo.")
 
     unidades = cantidad * int(rel["factor"])
+    costo_base = round(float(rel["base_price"] or 0) * cantidad, 2)
+    ganancia_inv = round(float(rel["inv_gain"] or 0) * cantidad, 2)
     key = (pid, pres_id)
     agrupados[key] = {
       "productoId": pid,
@@ -60,6 +65,12 @@ def _descontar_stock(conn, items):
       "factor": int(rel["factor"]),
       "cantidad": agrupados.get(key, {}).get("cantidad", 0) + cantidad,
       "unidades": agrupados.get(key, {}).get("unidades", 0) + unidades,
+      "inversionistaId": rel["inversionista_id"],
+      "inversionistaNombre": rel["inversionista_nombre"],
+      "costoInversion": round(agrupados.get(key, {}).get("costoInversion", 0) + costo_base, 2),
+      "gananciaInversionista": round(agrupados.get(key, {}).get("gananciaInversionista", 0) + ganancia_inv, 2),
+      "adminGain": round(agrupados.get(key, {}).get("adminGain", 0) + float(rel["admin_gain"] or 0) * cantidad, 2),
+      "flete": round(agrupados.get(key, {}).get("flete", 0) + float(rel["flete"] or 0) * cantidad, 2),
     }
 
   # Si el mismo producto aparece con presentaciones diferentes, el stock se comparte.
@@ -152,28 +163,32 @@ def _normalizar_fecha_colombia(valor):
 @api_ventas_bp.route("/api/transaccion", methods=["POST"])
 def api_transaccion():
   data = request.json or {}
-  cliente = str(data.get("cliente", "")).strip()
-  tipo_servicio = data.get("tipoServicio", "")
-  if not cliente or not tipo_servicio:
-    return jsonify({"error": "Cliente y tipo de servicio son obligatorios."}), 400
+  from app.schemas import TransaccionCrearSchema, parse_payload
+  try:
+    val = parse_payload(TransaccionCrearSchema, data)
+  except ValueError as err:
+    return jsonify({"error": str(err)}), 400
+
+  cliente = val.cliente
+  tipo_servicio = val.tipoServicio
 
   conn = get_db_connection()
   cursor = conn.cursor()
   try:
-    auxiliares_data = data.get("auxiliares", []) or []
-    admin_share = float(data.get("adminShare", 0))
-    materia_prima = float(data.get("materiaPrimaShare", 0))
-    total = float(data.get("total", 0))
+    auxiliares_data = [a.model_dump() for a in val.auxiliares]
+    admin_share = float(val.adminShare)
+    materia_prima = float(val.materiaPrimaShare)
+    total = float(val.total)
 
     mappings, aux_share = _calcular_auxiliares(conn, auxiliares_data, admin_share)
 
     # Ventas de productos: se descuentan las unidades del stock (falla si no alcanza).
-    items_stock = _descontar_stock(conn, data.get("items"))
-    items_combos = _descontar_stock_combos(conn, data.get("combos"))
+    items_stock = _descontar_stock(conn, [i.model_dump() for i in (val.items or [])])
+    items_combos = _descontar_stock_combos(conn, [c.model_dump() for c in (val.combos or [])])
 
     # Parte del inversionista: se guarda desglosada en inversión (costo) y ganancia.
-    inv_share = float(data.get("invShare", materia_prima))
-    inversion_raw, ganancia_raw = data.get("inversionShare"), data.get("gananciaInvShare")
+    inv_share = float(val.invShare if val.invShare is not None else materia_prima)
+    inversion_raw, ganancia_raw = val.inversionShare, val.gananciaInvShare
     if inversion_raw is not None and ganancia_raw is not None:
       inversion, ganancia = float(inversion_raw), float(ganancia_raw)
       if inversion < 0 or ganancia < 0:
@@ -195,17 +210,20 @@ def api_transaccion():
       if abs(total_calculado - total) > 0.01:
         total = total_calculado
 
+    inv_ids = {it.get("inversionistaId") for it in items_stock + items_combos if it.get("inversionistaId")}
+    transaccion_inv_id = list(inv_ids)[0] if len(inv_ids) == 1 else None
+
     cursor.execute(
         """
         INSERT INTO transacciones (id, fecha_hora, fecha_dia, cliente, tipo_servicio, total,
           admin_share, aux_share, materia_prima_share, inv_share, flete_total,
-          inversion_share, ganancia_inv_share, jornada_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          inversion_share, ganancia_inv_share, jornada_id, inversionista_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
-            data["id"], now_colombia().strftime("%Y-%m-%d %H:%M:%S"), now_colombia().strftime("%Y-%m-%d"), cliente,
+            val.id, now_colombia().strftime("%Y-%m-%d %H:%M:%S"), now_colombia().strftime("%Y-%m-%d"), cliente,
             tipo_servicio, total, admin_share, aux_share, materia_prima,
-            inv_share, float(data.get("fleteTotal", 0)), inversion, ganancia, _jornada_actual_id(conn),
+            inv_share, float(val.fleteTotal), inversion, ganancia, _jornada_actual_id(conn), transaccion_inv_id,
         ),
     )
 
@@ -215,18 +233,25 @@ def api_transaccion():
           INSERT INTO servicio_auxiliares (transaccion_id, auxiliar_id, porcentaje, base_mano_obra, pago)
           VALUES (?, ?, ?, ?, ?)
           """,
-          (data["id"], aux_id, pct, base_mano_obra, pago),
+          (val.id, aux_id, pct, base_mano_obra, pago),
       )
 
     for item in items_stock:
       cursor.execute(
           """
           INSERT INTO venta_items
-            (transaccion_id, producto_id, producto_nombre, unidades, presentacion_id, presentacion_nombre, factor_presentacion)
-          VALUES (?, ?, ?, ?, ?, ?, ?)
+            (transaccion_id, producto_id, producto_nombre, unidades, presentacion_id,
+             presentacion_nombre, factor_presentacion, inversionista_id, inversionista_nombre,
+             costo_inversion, ganancia_inversionista, precio_unitario, ganancia_admin, flete)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           """,
-          (data["id"], item["productoId"], item["productoNombre"], item["unidades"],
-           item["presentacionId"], item["presentacionNombre"], item["factor"]),
+          (val.id, item["productoId"], item["productoNombre"], item["unidades"],
+           item["presentacionId"], item["presentacionNombre"], item["factor"],
+           item.get("inversionistaId"), item.get("inversionistaNombre"),
+           item.get("costoInversion", 0), item.get("gananciaInversionista", 0),
+           round((float(item.get("costoInversion", 0)) + float(item.get("gananciaInversionista", 0)) + float(item.get("adminGain", 0)) + float(item.get("flete", 0))) / max(int(item["unidades"]), 1), 4),
+           float(item.get("adminGain", 0)) / max(int(item["unidades"]), 1),
+           float(item.get("flete", 0)) / max(int(item["unidades"]), 1)),
       )
 
     # Insertar items de combos en venta_items (para que al eliminar la venta, el stock retorne intacto)
@@ -234,10 +259,17 @@ def api_transaccion():
       cursor.execute(
           """
           INSERT INTO venta_items
-            (transaccion_id, producto_id, producto_nombre, unidades, presentacion_id, presentacion_nombre, factor_presentacion)
-          VALUES (?, ?, ?, ?, 'combo', ?, 1)
+            (transaccion_id, producto_id, producto_nombre, unidades, presentacion_id,
+             presentacion_nombre, factor_presentacion, inversionista_id, inversionista_nombre,
+             costo_inversion, ganancia_inversionista, precio_unitario, ganancia_admin, flete)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           """,
-          (data["id"], it["productoId"], it["productoNombre"], it["unidades"], f"Combo: {it['comboNombre']}"),
+          (val.id, it["productoId"], it["productoNombre"], it["unidades"], it.get("presentacionId") or 'combo', f"{it.get('presentacionNombre') or 'Presentación'} · Combo: {it['comboNombre']}", it.get("factor") or 1,
+           it.get("inversionistaId"), it.get("inversionistaNombre"),
+           it.get("costoInversion", 0), it.get("gananciaInversionista", 0),
+           round((float(it.get("costoInversion", 0)) + float(it.get("gananciaInversionista", 0))) / max(int(it["unidades"]), 1), 4),
+           float(it.get("adminGain", 0)) / max(int(it["unidades"]), 1),
+           float(it.get("flete", 0)) / max(int(it["unidades"]), 1)),
       )
 
     conn.commit()
@@ -267,7 +299,12 @@ def api_obtener_transaccion(id_tx):
          WHERE sa.transaccion_id=? ORDER BY a.nombre COLLATE NOCASE""", (id_tx,)
     ).fetchall()
     items = conn.execute(
-      """SELECT producto_id, producto_nombre, unidades, presentacion_id, presentacion_nombre, factor_presentacion
+      """SELECT id, producto_id, producto_nombre, unidades, presentacion_id, presentacion_nombre, factor_presentacion,
+                COALESCE(precio_unitario, 0) AS precio_unitario,
+                COALESCE(costo_inversion, 0) AS costo_inversion,
+                COALESCE(ganancia_admin, 0) AS ganancia_admin,
+                COALESCE(ganancia_inversionista, 0) AS ganancia_inversionista,
+                COALESCE(flete, 0) AS flete
          FROM venta_items WHERE transaccion_id=? ORDER BY id""", (id_tx,)
     ).fetchall()
     return jsonify({
@@ -288,36 +325,225 @@ def api_obtener_transaccion(id_tx):
 @api_ventas_bp.route("/api/transaccion/<id_tx>", methods=["PUT"])
 def api_editar_transaccion(id_tx):
   data = request.json or {}
+  from app.schemas import TransaccionEditarSchema, parse_payload
+  try:
+    val = parse_payload(TransaccionEditarSchema, data)
+  except ValueError as err:
+    return jsonify({"error": str(err)}), 400
+
   conn = get_db_connection()
   try:
     tx = conn.execute("SELECT * FROM transacciones WHERE id = ?", (id_tx,)).fetchone()
     if not tx:
       return jsonify({"error": "Venta no encontrada."}), 404
 
-    cliente = str(data.get("cliente", tx["cliente"])).strip()
+    cliente = str(val.cliente if val.cliente is not None else tx["cliente"]).strip()
     if not cliente:
       raise ValueError("El cliente/comprador es obligatorio.")
-    fecha_hora, fecha_dia = _normalizar_fecha_colombia(data.get("fechaHora", tx["fecha_hora"]))
+    fecha_hora, fecha_dia = _normalizar_fecha_colombia(val.fechaHora if val.fechaHora else tx["fecha_hora"])
     es_producto = str(tx["tipo_servicio"]).startswith("Prod:")
 
     if es_producto:
-      admin = float(data.get("adminShare", tx["admin_share"]))
-      inversion = float(data.get("inversionShare", tx["inversion_share"] if tx["inversion_share"] is not None else 0))
-      ganancia = float(data.get("gananciaInvShare", tx["ganancia_inv_share"] if tx["ganancia_inv_share"] is not None else max((tx["inv_share"] or 0) - inversion, 0)))
-      flete = float(data.get("fleteTotal", tx["flete_total"] or 0))
-      if min(admin, inversion, ganancia, flete) < 0:
-        raise ValueError("Los valores de la venta no pueden ser negativos.")
-      inv_share = round(inversion + ganancia, 2)
-      total = round(admin + inv_share, 2)
-      conn.execute(
-        """UPDATE transacciones SET fecha_hora=?, fecha_dia=?, cliente=?, total=?, admin_share=?, aux_share=0,
-           materia_prima_share=0, inv_share=?, flete_total=?, inversion_share=?, ganancia_inv_share=? WHERE id=?""",
-        (fecha_hora, fecha_dia, cliente, total, admin, inv_share, flete, inversion, ganancia, id_tx),
-      )
+      # Si el editor recibe items, esos items son la fuente de verdad. Antes de
+      # reconstruirlos se devuelve al stock todo lo que tenía la venta original.
+      old_items = conn.execute(
+          """SELECT id, producto_id, producto_nombre, unidades, presentacion_id,
+                    presentacion_nombre, factor_presentacion, inversionista_id, inversionista_nombre,
+                    COALESCE(costo_inversion,0) AS costo_inversion,
+                    COALESCE(ganancia_inversionista,0) AS ganancia_inversionista,
+                    COALESCE(precio_unitario,0) AS precio_unitario,
+                    COALESCE(ganancia_admin,0) AS ganancia_admin,
+                    COALESCE(flete,0) AS flete
+             FROM venta_items WHERE transaccion_id=? ORDER BY id""", (id_tx,)
+      ).fetchall()
+      old_by_id = {int(x["id"]): x for x in old_items}
+
+      if val.items is None:
+        # Compatibilidad con clientes antiguos: solo modifica los totales de la venta.
+        admin = float(val.adminShare if val.adminShare is not None else tx["admin_share"])
+        inversion = float(val.inversionShare if val.inversionShare is not None else (tx["inversion_share"] or 0))
+        ganancia = float(val.gananciaInvShare if val.gananciaInvShare is not None else (tx["ganancia_inv_share"] or 0))
+        flete = float(val.fleteTotal if val.fleteTotal is not None else (tx["flete_total"] or 0))
+        inv_share = round(inversion + ganancia, 2)
+        total = round(admin + inv_share, 2)
+        conn.execute(
+          """UPDATE transacciones SET fecha_hora=?, fecha_dia=?, cliente=?, total=?, admin_share=?, aux_share=0,
+             materia_prima_share=0, inv_share=?, flete_total=?, inversion_share=?, ganancia_inv_share=? WHERE id=?""",
+          (fecha_hora, fecha_dia, cliente, total, admin, inv_share, flete, inversion, ganancia, id_tx),
+        )
+      else:
+        if len(val.items) == 0:
+          raise ValueError("La venta debe conservar al menos un producto.")
+
+        # Devuelve el stock original; si algo falla, toda la operación hace rollback.
+        for item in old_items:
+          conn.execute("UPDATE productos SET stock = stock + ? WHERE id = ?", (int(item["unidades"] or 0), item["producto_id"]))
+
+        nuevos = []
+        total = 0.0
+        total_base = 0.0
+        total_gan_inv = 0.0
+        total_flete = 0.0
+        total_admin = 0.0
+        nombres = []
+
+        for raw in val.items:
+          pid = str(raw.productoId).strip()
+          pres_id = str(raw.presentacionId).strip()
+          cantidad = int(raw.cantidad)
+          if cantidad <= 0:
+            raise ValueError("La cantidad de cada producto debe ser mayor que 0.")
+
+          old = old_by_id.get(int(raw.id)) if raw.id is not None else None
+          # Las líneas de combo históricas no tienen una presentación de catálogo.
+          if pres_id == "combo":
+            if not old or old["presentacion_id"] != "combo":
+              raise ValueError("No se puede agregar manualmente una línea de combo desde este editor.")
+            factor = 1
+            pres_nombre = old["presentacion_nombre"] or "Combo"
+            cantidad_historica = max(int(old["unidades"] or 0), 1)
+            base_pres_default = float(old["costo_inversion"] or 0) / cantidad_historica
+            inv_pres_default = float(old["ganancia_inversionista"] or 0) / cantidad_historica
+            flete_pres_default = float(old["flete"] or 0) / cantidad_historica
+            admin_pres_default = float(old["ganancia_admin"] or 0) / cantidad_historica
+            inversionista_id = old["inversionista_id"]
+            inversionista_nombre = old["inversionista_nombre"]
+          else:
+            if old and old["producto_id"] == pid and old["presentacion_id"] == pres_id:
+              # Conserva el costo histórico como valor inicial. El editor actual
+              # puede reemplazarlo explícitamente mediante el desglose de precios.
+              factor = int(old["factor_presentacion"] or 1)
+              pres_nombre = old["presentacion_nombre"] or "Presentación"
+              cantidad_historica = max(int(old["unidades"] or 0) // max(factor, 1), 1)
+              base_pres_default = float(old["costo_inversion"] or 0) / cantidad_historica
+              inv_pres_default = float(old["ganancia_inversionista"] or 0) / cantidad_historica
+              flete_pres_default = float(old["flete"] or 0) / cantidad_historica
+              admin_pres_default = float(old["ganancia_admin"] or 0) / cantidad_historica
+              inversionista_id = old["inversionista_id"]
+              inversionista_nombre = old["inversionista_nombre"]
+            else:
+              rel = conn.execute(
+                """SELECT pr.id producto_id, pr.nombre producto_nombre, pr.inversionista_id,
+                          inv.nombre inversionista_nombre, pp.presentacion_id, p.nombre presentacion_nombre,
+                          p.factor, pp.base_price, pp.admin_gain, pp.inv_gain, pp.flete
+                   FROM productos pr
+                   JOIN producto_presentaciones pp ON pp.producto_id=pr.id AND pp.activa=1
+                   JOIN presentaciones p ON p.id=pp.presentacion_id AND p.activa=1
+                   LEFT JOIN inversionistas inv ON inv.id=pr.inversionista_id
+                   WHERE pr.id=? AND pp.presentacion_id=?""", (pid, pres_id)
+              ).fetchone()
+              if not rel:
+                raise ValueError("El producto o la presentación seleccionada no están disponibles.")
+              factor = int(rel["factor"])
+              pres_nombre = rel["presentacion_nombre"]
+              base_pres_default = float(rel["base_price"] or 0)
+              admin_pres_default = float(rel["admin_gain"] or 0)
+              inv_pres_default = float(rel["inv_gain"] or 0)
+              flete_pres_default = float(rel["flete"] or 0)
+              inversionista_id = rel["inversionista_id"]
+              inversionista_nombre = rel["inversionista_nombre"]
+
+          # El editor actual envía el desglose completo por presentación.
+          # Cuando viene, esos cuatro valores son la fuente de verdad de la línea.
+          componentes_enviados = all(
+            getattr(raw, nombre) is not None
+            for nombre in ("precioBase", "gananciaAdmin", "gananciaInv", "flete")
+          )
+          if componentes_enviados:
+            base_pres = float(raw.precioBase)
+            admin_pres = float(raw.gananciaAdmin)
+            inv_pres = float(raw.gananciaInv)
+            flete_pres = float(raw.flete)
+            precio_final_pres = base_pres + admin_pres + inv_pres + flete_pres
+            if raw.precioFinal is not None and abs(float(raw.precioFinal) - precio_final_pres) > 0.01:
+              raise ValueError("El precio final no coincide con la suma de costo base, ganancia admin, ganancia del inversionista y flete.")
+          else:
+            base_pres = base_pres_default
+            admin_pres = admin_pres_default
+            inv_pres = inv_pres_default
+            flete_pres = flete_pres_default
+            precio_final_pres = base_pres + admin_pres + inv_pres + flete_pres
+
+          base_unit = base_pres / max(factor, 1)
+          admin_unit = admin_pres / max(factor, 1)
+          inv_unit = inv_pres / max(factor, 1)
+          flete_unit = flete_pres / max(factor, 1)
+
+          producto = conn.execute("SELECT nombre, stock FROM productos WHERE id=?", (pid,)).fetchone()
+          if not producto:
+            raise ValueError("Uno de los productos seleccionados ya no existe.")
+
+          unidades = cantidad * factor
+          precio_unit = base_unit + admin_unit + inv_unit + flete_unit
+          if precio_unit < 0:
+            raise ValueError("El precio no puede ser negativo.")
+          if raw.precioFinal is not None and abs(float(raw.precioFinal) / max(factor, 1) - precio_unit) > 0.01:
+            raise ValueError("El precio final no coincide con el desglose indicado.")
+
+          costo_total = base_unit * unidades
+          gan_inv_total = inv_unit * unidades
+          flete_total = flete_unit * unidades
+          admin_total = max(admin_unit * unidades, 0)
+          linea_total = precio_unit * unidades
+
+          nuevos.append({
+            "productoId": pid, "productoNombre": producto["nombre"], "unidades": unidades,
+            "presentacionId": pres_id, "presentacionNombre": pres_nombre, "factor": factor,
+            "inversionistaId": inversionista_id, "inversionistaNombre": inversionista_nombre,
+            "costoInversion": round(costo_total, 2),
+            "gananciaInversionista": round(gan_inv_total, 2),
+            "precioUnitario": round(precio_unit, 4),
+            "gananciaAdmin": round(admin_total, 2),
+            "flete": round(flete_total, 2),
+          })
+          total += linea_total
+          total_base += costo_total
+          total_gan_inv += gan_inv_total
+          total_flete += flete_total
+          total_admin += admin_total
+          nombres.append(f"{cantidad}x {pres_nombre} {producto['nombre']}")
+
+        # Valida el stock completo antes de escribir las líneas nuevas.
+        por_producto = {}
+        for item in nuevos:
+          por_producto[item["productoId"]] = por_producto.get(item["productoId"], 0) + item["unidades"]
+        for pid, unidades in por_producto.items():
+          fila = conn.execute("SELECT nombre, stock FROM productos WHERE id=?", (pid,)).fetchone()
+          if not fila or int(fila["stock"] or 0) < unidades:
+            disponible = int(fila["stock"] or 0) if fila else 0
+            raise ValueError(f"Stock insuficiente de «{fila['nombre'] if fila else pid}»: disponible {disponible} ud, solicitado {unidades} ud.")
+          conn.execute("UPDATE productos SET stock=stock-? WHERE id=?", (unidades, pid))
+
+        conn.execute("DELETE FROM venta_items WHERE transaccion_id=?", (id_tx,))
+        for item in nuevos:
+          conn.execute(
+            """INSERT INTO venta_items
+              (transaccion_id, producto_id, producto_nombre, unidades, presentacion_id,
+               presentacion_nombre, factor_presentacion, inversionista_id, inversionista_nombre,
+               costo_inversion, ganancia_inversionista, precio_unitario, ganancia_admin, flete)
+             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (id_tx, item["productoId"], item["productoNombre"], item["unidades"],
+             item["presentacionId"], item["presentacionNombre"], item["factor"],
+             item["inversionistaId"], item["inversionistaNombre"], item["costoInversion"],
+             item["gananciaInversionista"], item["precioUnitario"], item["gananciaAdmin"], item["flete"]),
+          )
+
+        inv_share = round(total_base + total_flete + total_gan_inv, 2)
+        total = round(total, 2)
+        total_admin = round(total_admin, 2)
+        conn.execute(
+          """UPDATE transacciones SET fecha_hora=?, fecha_dia=?, cliente=?, tipo_servicio=?, total=?,
+             admin_share=?, aux_share=0, materia_prima_share=0, inv_share=?, flete_total=?,
+             inversion_share=?, ganancia_inv_share=? WHERE id=?""",
+          (fecha_hora, fecha_dia, cliente, "Prod: " + ", ".join(nombres), total,
+           total_admin, inv_share, round(total_flete, 2), round(total_base + total_flete, 2),
+           round(total_gan_inv, 2), id_tx),
+        )
+
     else:
-      admin = float(data.get("adminShare", tx["admin_share"]))
-      materia = float(data.get("materiaPrimaShare", tx["materia_prima_share"]))
-      auxiliares_data = data.get("auxiliares", None)
+      admin = float(val.adminShare if val.adminShare is not None else tx["admin_share"])
+      materia = float(val.materiaPrimaShare if val.materiaPrimaShare is not None else tx["materia_prima_share"])
+      auxiliares_data = [a.model_dump() for a in val.auxiliares] if val.auxiliares is not None else None
       if auxiliares_data is None:
         aux_rows = conn.execute("SELECT auxiliar_id id, porcentaje FROM servicio_auxiliares WHERE transaccion_id=? ORDER BY id", (id_tx,)).fetchall()
         auxiliares_data = [dict(x) for x in aux_rows]
@@ -380,6 +606,14 @@ def api_reiniciar_jornada():
     ahora = now_colombia().strftime("%Y-%m-%d %H:%M:%S")
     conn.execute("INSERT INTO jornadas(id, iniciada_en, activa) VALUES(?,?,1)", (nueva_id, ahora))
     conn.commit()
+
+    # Generar copia de seguridad automática al cerrar/reiniciar jornada
+    try:
+      from app.backup import crear_backup
+      crear_backup(motivo="cierre_jornada")
+    except Exception as exc_b:
+      print(f"[AVISO] No se pudo crear copia de seguridad al reiniciar jornada: {exc_b}")
+
     return jsonify({"status": "reset", "jornadaId": nueva_id, "iniciadaEn": ahora})
   except Exception as exc:
     conn.rollback()
@@ -399,15 +633,20 @@ def _descontar_stock_combos(conn, combos_data):
     if not combo_id or cantidad_combos is None:
       raise ValueError("Cada combo debe incluir un identificador y una cantidad válida mayor a 0.")
 
-    combo = conn.execute("SELECT id, nombre FROM combos WHERE id = ? AND activo = 1", (combo_id,)).fetchone()
+    combo = conn.execute("SELECT id, nombre, admin_gain, flete FROM combos WHERE id = ? AND activo = 1", (combo_id,)).fetchone()
     if not combo:
       raise ValueError(f"El combo solicitado ({combo_id}) ya no está disponible.")
 
     componentes = conn.execute(
         """
-        SELECT ci.producto_id, ci.cantidad, p.nombre, p.stock
+        SELECT ci.producto_id, ci.presentacion_id, ci.cantidad, ci.costo_base, ci.inv_gain,
+               COALESCE(pr.nombre, 'Presentación') AS presentacion_nombre,
+               COALESCE(pr.factor, 1) AS presentacion_factor,
+               p.nombre, p.stock, p.inversionista_id, inv.nombre AS inversionista_nombre
         FROM combo_items ci
         JOIN productos p ON p.id = ci.producto_id
+        LEFT JOIN presentaciones pr ON pr.id = ci.presentacion_id
+        LEFT JOIN inversionistas inv ON inv.id = p.inversionista_id
         WHERE ci.combo_id = ?
         """,
         (combo_id,),
@@ -416,14 +655,25 @@ def _descontar_stock_combos(conn, combos_data):
     if not componentes:
       raise ValueError(f"El combo «{combo['nombre']}» no tiene productos asociados.")
 
+    unidades_por_combo = sum(int(c["cantidad"] or 0) * max(int(c["presentacion_factor"] or 1), 1) for c in componentes)
     for comp in componentes:
-      unidades_a_descontar = int(comp["cantidad"]) * cantidad_combos
+      factor = max(int(comp["presentacion_factor"] or 1), 1)
+      unidades_a_descontar = int(comp["cantidad"]) * factor * cantidad_combos
       items_deducir.append({
           "productoId": comp["producto_id"],
           "productoNombre": comp["nombre"],
           "unidades": unidades_a_descontar,
+          "presentacionId": comp["presentacion_id"],
+          "presentacionNombre": comp["presentacion_nombre"],
+          "factor": factor,
           "comboNombre": combo["nombre"],
           "cantidadCombos": cantidad_combos,
+          "inversionistaId": comp["inversionista_id"],
+          "inversionistaNombre": comp["inversionista_nombre"],
+          "costoInversion": round(float(comp["costo_base"] or 0) * cantidad_combos, 2),
+          "gananciaInversionista": round(float(comp["inv_gain"] or 0) * cantidad_combos, 2),
+          "adminGain": round(float(combo["admin_gain"] or 0) * cantidad_combos * (int(comp["cantidad"]) * factor) / max(unidades_por_combo, 1), 2),
+          "flete": round(float(combo["flete"] or 0) * cantidad_combos * (int(comp["cantidad"]) * factor) / max(unidades_por_combo, 1), 2),
       })
 
   # Agrupar por producto por si varios combos usan el mismo producto

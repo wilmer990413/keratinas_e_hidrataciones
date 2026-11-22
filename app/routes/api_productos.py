@@ -32,7 +32,14 @@ def _decimal_no_negativo(valor):
 
 def _producto_json(conn, producto_id):
   row = conn.execute(
-      "SELECT id, nombre, stock, es_ampolleta FROM productos WHERE id = ?", (producto_id,)
+      """
+      SELECT p.id, p.nombre, p.stock, p.es_ampolleta, p.inversionista_id,
+             inv.nombre AS inversionista_nombre, inv.porcentaje_ganancia AS inversionista_pct
+      FROM productos p
+      LEFT JOIN inversionistas inv ON inv.id = p.inversionista_id
+      WHERE p.id = ?
+      """,
+      (producto_id,)
   ).fetchone()
   if not row:
     return None
@@ -53,6 +60,9 @@ def _producto_json(conn, producto_id):
       "nombre": row["nombre"],
       "stock": row["stock"],
       "esAmpolleta": row["es_ampolleta"],
+      "inversionistaId": row["inversionista_id"],
+      "inversionistaNombre": row["inversionista_nombre"],
+      "inversionistaPct": float(row["inversionista_pct"] or 0) if row["inversionista_nombre"] else 0,
       "presentaciones": [
           {
               "id": r["id"],
@@ -185,6 +195,20 @@ def api_estado():
   auxiliares = [dict(r) for r in conn.execute(
       "SELECT id, nombre, documento, telefono, activo, fecha_ingreso FROM auxiliares ORDER BY activo DESC, nombre COLLATE NOCASE"
   ).fetchall()]
+
+  inversionistas = [
+      {
+          "id": r["id"],
+          "nombre": r["nombre"],
+          "documento": r["documento"] or "",
+          "telefono": r["telefono"] or "",
+          "porcentajeGanancia": float(r["porcentaje_ganancia"] or 0),
+          "activo": bool(r["activo"]),
+      }
+      for r in conn.execute(
+          "SELECT id, nombre, documento, telefono, porcentaje_ganancia, activo FROM inversionistas WHERE activo=1 ORDER BY nombre COLLATE NOCASE"
+      ).fetchall()
+  ]
   conn.close()
 
   response = make_response(jsonify({
@@ -194,6 +218,7 @@ def api_estado():
       "transacciones": transacciones,
       "jornada": {"id": jornada["id"], "iniciadaEn": jornada["iniciada_en"]},
       "auxiliares": auxiliares,
+      "inversionistas": inversionistas,
   }))
   response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
   return response
@@ -212,10 +237,14 @@ def api_listar_presentaciones():
 @api_productos_bp.route("/api/presentacion", methods=["POST"])
 def api_crear_presentacion():
   data = request.json or {}
-  nombre = str(data.get("nombre", "")).strip()
-  factor = _entero_positivo(data.get("factor"))
-  if not nombre or factor is None:
-    return jsonify({"error": "El nombre y el factor de la presentación son obligatorios."}), 400
+  from app.schemas import PresentacionGuardarSchema, parse_payload
+  try:
+    val = parse_payload(PresentacionGuardarSchema, data)
+  except ValueError as err:
+    return jsonify({"error": str(err)}), 400
+
+  nombre = val.nombre
+  factor = val.factor
   conn = get_db_connection()
   try:
     existe = conn.execute("SELECT 1 FROM presentaciones WHERE lower(nombre)=lower(?)", (nombre,)).fetchone()
@@ -273,15 +302,18 @@ def api_editar_presentacion(presentacion_id):
 def api_desactivar_presentacion(presentacion_id):
   conn = get_db_connection()
   try:
-    row = conn.execute("SELECT id FROM presentaciones WHERE id=?", (presentacion_id,)).fetchone()
+    row = conn.execute("SELECT id, nombre FROM presentaciones WHERE id=?", (presentacion_id,)).fetchone()
     if not row:
       return jsonify({"error": "Presentación no encontrada."}), 404
-    if presentacion_id in {"unidad", "media_docena", "docena"}:
-      return jsonify({"error": "Las presentaciones estándar no se pueden eliminar; pueden mantenerse activas para todos los productos."}), 400
-    conn.execute("UPDATE presentaciones SET activa=0 WHERE id=?", (presentacion_id,))
-    conn.execute("UPDATE producto_presentaciones SET activa=0 WHERE presentacion_id=?", (presentacion_id,))
+
+    # Las presentaciones también pueden ser las iniciales (Unidad, Media docena,
+    # Docena u otras que el negocio haya creado). Todas pueden eliminarse del
+    # catálogo. Las ventas históricas conservan su nombre porque venta_items
+    # guarda una copia del texto de la presentación y no depende de esta fila.
+    conn.execute("DELETE FROM producto_presentaciones WHERE presentacion_id=?", (presentacion_id,))
+    conn.execute("DELETE FROM presentaciones WHERE id=?", (presentacion_id,))
     conn.commit()
-    return jsonify({"status": "deleted"})
+    return jsonify({"status": "deleted", "nombre": row["nombre"]})
   except Exception as exc:
     conn.rollback()
     return jsonify({"error": str(exc)}), 400
@@ -292,24 +324,32 @@ def api_desactivar_presentacion(presentacion_id):
 @api_productos_bp.route("/api/producto", methods=["POST", "PUT"])
 def api_guardar_producto():
   data = request.json or {}
-  nombre = str(data.get("nombre", "")).strip()
-  if not nombre:
-    return jsonify({"error": "El nombre del producto es obligatorio."}), 400
-  stock = _entero_no_negativo(data.get("stock", 0))
-  if stock is None:
-    return jsonify({"error": "El stock debe ser un número entero mayor o igual a 0."}), 400
+  from app.schemas import ProductoGuardarSchema, parse_payload
+  try:
+    val = parse_payload(ProductoGuardarSchema, data)
+  except ValueError as err:
+    return jsonify({"error": str(err)}), 400
+
+  nombre = val.nombre
+  stock = val.stock
+  inversionista_id = str(val.inversionistaId or "").strip() or None
 
   conn = get_db_connection()
   try:
-    producto_id = str(data.get("id", "")).strip() or "p-" + str(__import__("time").time_ns())
+    if inversionista_id:
+      inv = conn.execute("SELECT 1 FROM inversionistas WHERE id = ?", (inversionista_id,)).fetchone()
+      if not inv:
+        inversionista_id = None
+
+    producto_id = str(val.id or "").strip() or "p-" + str(__import__("time").time_ns())
     existente = conn.execute("SELECT * FROM productos WHERE id=?", (producto_id,)).fetchone()
-    es_ampolleta = int(data.get("esAmpolleta", existente["es_ampolleta"] if existente else 0) or 0)
+    es_ampolleta = int(val.esAmpolleta if val.esAmpolleta is not None else (existente["es_ampolleta"] if existente else 0))
 
     pres_data = _normalizar_presentacion_data(data.get("presentaciones"))
     if existente:
       conn.execute(
-          "UPDATE productos SET nombre=?, stock=?, es_ampolleta=? WHERE id=?",
-          (nombre, stock, es_ampolleta, producto_id),
+          "UPDATE productos SET nombre=?, stock=?, es_ampolleta=?, inversionista_id=? WHERE id=?",
+          (nombre, stock, es_ampolleta, inversionista_id, producto_id),
       )
     else:
       # Los valores legacy quedan como precio base de referencia para nuevas presentaciones.
@@ -319,8 +359,8 @@ def api_guardar_producto():
       inv = _decimal_no_negativo(unit.get("invGain")) or 0
       flete = _decimal_no_negativo(unit.get("flete")) or 0
       conn.execute(
-          "INSERT INTO productos(id,nombre,base_price,admin_gain,inv_gain,flete,es_ampolleta,presentacion,stock) VALUES(?,?,?,?,?,?,?,?,?)",
-          (producto_id, nombre, base, admin, inv, flete, es_ampolleta, "unidad", stock),
+          "INSERT INTO productos(id,nombre,base_price,admin_gain,inv_gain,flete,es_ampolleta,presentacion,stock,inversionista_id) VALUES(?,?,?,?,?,?,?,?,?,?)",
+          (producto_id, nombre, base, admin, inv, flete, es_ampolleta, "unidad", stock, inversionista_id),
       )
 
     _asegurar_presentaciones_producto(conn, producto_id, pres_data)

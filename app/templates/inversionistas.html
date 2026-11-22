@@ -1,0 +1,163 @@
+<section id="tab-inversionistas" class="tab-content hidden space-y-6">
+  <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div>
+      <h2 class="text-2xl font-bold text-gray-900 dark:text-white">Módulo de Inversionistas</h2>
+      <p class="text-xs text-gray-500 dark:text-gray-400">Registra inversionistas, su porcentaje de ganancia y consulta en cuáles productos invirtió cada uno</p>
+    </div>
+    <button onclick="abrirModalInversionista()" class="inline-flex items-center gap-2 bg-brand-600 hover:bg-brand-700 text-white px-4 py-2.5 rounded-xl text-xs font-semibold shadow-md transition">
+      <i class="fa-solid fa-plus"></i> Nuevo Inversionista
+    </button>
+  </div>
+
+  <!-- Tarjetas KPI Resumen -->
+  <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+    <div class="bg-white dark:bg-cardbg p-5 rounded-2xl border border-gray-100 dark:border-gray-800 shadow-sm flex items-center gap-4">
+      <div class="w-12 h-12 rounded-xl bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400 flex items-center justify-center text-xl shrink-0">
+        <i class="fa-solid fa-user-tie"></i>
+      </div>
+      <div>
+        <p class="text-xs font-medium text-gray-400">Inversionistas Activos</p>
+        <h3 id="kpiTotalInversionistas" class="text-xl font-bold text-gray-900 dark:text-white">0</h3>
+      </div>
+    </div>
+
+    <div class="bg-white dark:bg-cardbg p-5 rounded-2xl border border-gray-100 dark:border-gray-800 shadow-sm flex items-center gap-4">
+      <div class="w-12 h-12 rounded-xl bg-brand-50 dark:bg-brand-950/40 text-brand-600 dark:text-brand-400 flex items-center justify-center text-xl shrink-0">
+        <i class="fa-solid fa-boxes-stacked"></i>
+      </div>
+      <div>
+        <p class="text-xs font-medium text-gray-400">Productos con Inversión</p>
+        <h3 id="kpiTotalProductosInv" class="text-xl font-bold text-gray-900 dark:text-white">0</h3>
+      </div>
+    </div>
+
+    <div class="bg-white dark:bg-cardbg p-5 rounded-2xl border border-gray-100 dark:border-gray-800 shadow-sm flex items-center gap-4">
+      <div class="w-12 h-12 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 flex items-center justify-center text-xl shrink-0">
+        <i class="fa-solid fa-sack-dollar"></i>
+      </div>
+      <div>
+        <p class="text-xs font-medium text-gray-400">Inversión en Stock Activo</p>
+        <h3 id="kpiTotalInversionDinero" class="text-xl font-bold text-emerald-600 dark:text-emerald-400">$0</h3>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tabla de Inversionistas -->
+  <div class="bg-white dark:bg-cardbg rounded-2xl border border-gray-100 dark:border-gray-800 shadow-sm overflow-hidden">
+    <div class="px-5 py-4 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between">
+      <div>
+        <h3 class="font-bold text-sm text-gray-900 dark:text-white">Directorio de Inversionistas</h3>
+        <p class="text-[11px] text-gray-500 dark:text-gray-400">Relación de inversionistas, porcentaje de retorno acordado y productos financiados.</p>
+      </div>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-left text-xs">
+        <thead class="bg-gray-50 dark:bg-gray-800/80 text-gray-500 dark:text-gray-400 font-semibold uppercase tracking-wider border-b border-gray-100 dark:border-gray-800">
+          <tr>
+            <th class="p-4">Inversionista</th>
+            <th class="p-4">Documento / Contacto</th>
+            <th class="p-4">% Ganancia</th>
+            <th class="p-4">Productos en los que Invirtió</th>
+            <th class="p-4">Inversión en Stock</th>
+            <th class="p-4">Estado</th>
+            <th class="p-4 text-center">Acciones</th>
+          </tr>
+        </thead>
+        <tbody id="tablaInversionistas" class="divide-y divide-gray-100 dark:divide-gray-800 text-gray-700 dark:text-gray-300"></tbody>
+      </table>
+    </div>
+    <div id="emptyInversionistas" class="p-8 text-center text-xs text-gray-400 hidden">
+      No hay inversionistas registrados. Haz clic en "Nuevo Inversionista" para registrar el primero.
+    </div>
+  </div>
+
+  <!-- Modal Crear/Editar Inversionista -->
+  <div id="modalInversionista" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-white dark:bg-cardbg rounded-2xl border border-gray-200 dark:border-gray-700 w-full max-w-lg p-6 shadow-2xl space-y-4">
+      <div class="flex justify-between items-center pb-3 border-b border-gray-100 dark:border-gray-800">
+        <div>
+          <h3 id="modalInvTitulo" class="font-bold text-lg text-gray-900 dark:text-white">Nuevo Inversionista</h3>
+          <p class="text-[10px] text-gray-400">Define los datos de contacto y el porcentaje de ganancia por producto.</p>
+        </div>
+        <button onclick="cerrarModalInversionista()" class="text-gray-400 hover:text-gray-600 dark:hover:text-white">
+          <i class="fa-solid fa-xmark text-lg"></i>
+        </button>
+      </div>
+
+      <form id="formInversionista" onsubmit="guardarInversionista(event)" class="space-y-4">
+        <input type="hidden" id="invId">
+
+        <div>
+          <label class="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">Nombre completo *</label>
+          <input type="text" id="invNombre" required placeholder="Ej: Juan Pérez" class="w-full px-3 py-2 text-sm bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500">
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">Documento / Cédula</label>
+            <input type="text" id="invDocumento" placeholder="Opcional" class="w-full px-3 py-2 text-sm bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl dark:text-white focus:outline-none">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">Teléfono / WhatsApp</label>
+            <input type="text" id="invTelefono" placeholder="Opcional" class="w-full px-3 py-2 text-sm bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl dark:text-white focus:outline-none">
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">% de Ganancia sobre Cada Producto Vendido *</label>
+          <div class="relative">
+            <input type="number" id="invPorcentajeGanancia" required min="0" max="100" step="0.1" value="0" placeholder="Ej: 20" class="w-full px-3 py-2 pr-8 text-sm bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500">
+            <span class="absolute right-3 top-2 text-sm font-bold text-gray-400">%</span>
+          </div>
+          <p class="text-[11px] text-gray-400 mt-1">
+            <i class="fa-solid fa-circle-info text-brand-500 mr-1"></i>
+            Este porcentaje quedará asociado a este inversionista y se sugerirá automáticamente al registrar o editar los productos en los que invierta.
+          </p>
+        </div>
+
+        <div class="flex justify-end gap-3 pt-4 border-t border-gray-100 dark:border-gray-800">
+          <button type="button" onclick="cerrarModalInversionista()" class="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-xs font-semibold rounded-xl transition">Cancelar</button>
+          <button type="submit" class="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold rounded-xl shadow-md transition">Guardar Inversionista</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal Ver Productos del Inversionista -->
+  <div id="modalProductosInversionista" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-white dark:bg-cardbg rounded-2xl border border-gray-200 dark:border-gray-700 w-full max-w-2xl max-h-[85vh] overflow-y-auto p-6 shadow-2xl space-y-4">
+      <div class="flex justify-between items-center pb-3 border-b border-gray-100 dark:border-gray-800">
+        <div>
+          <h3 id="modalProdInvTitulo" class="font-bold text-lg text-gray-900 dark:text-white">Productos Financiados</h3>
+          <p id="modalProdInvSubtitulo" class="text-xs text-gray-400">Detalle de existencias y costos de inversión</p>
+        </div>
+        <button onclick="cerrarModalProductosInversionista()" class="text-gray-400 hover:text-gray-600 dark:hover:text-white">
+          <i class="fa-solid fa-xmark text-lg"></i>
+        </button>
+      </div>
+
+      <div class="overflow-x-auto">
+        <table class="w-full text-left text-xs">
+          <thead class="bg-gray-50 dark:bg-gray-800/80 text-gray-500 dark:text-gray-400 font-semibold uppercase tracking-wider">
+            <tr>
+              <th class="p-3">Producto</th>
+              <th class="p-3 text-center">Stock</th>
+              <th class="p-3">Costo Base Unitario</th>
+              <th class="p-3">Ganancia Inv. Unit.</th>
+              <th class="p-3">Inversión en Stock</th>
+            </tr>
+          </thead>
+          <tbody id="tablaDetalleProductosInversionista" class="divide-y divide-gray-100 dark:divide-gray-800 text-gray-700 dark:text-gray-300"></tbody>
+        </table>
+      </div>
+      <div id="emptyDetalleProductosInv" class="p-6 text-center text-xs text-gray-400 hidden">
+        Este inversionista aún no tiene productos asignados en Gestión de Productos.
+      </div>
+
+      <div class="flex justify-between items-center pt-3 border-t border-gray-100 dark:border-gray-800">
+        <span id="modalProdInvTotal" class="text-xs font-bold text-gray-900 dark:text-white">Inversión total en stock: $0</span>
+        <button type="button" onclick="cerrarModalProductosInversionista()" class="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-xs font-semibold rounded-xl">Cerrar</button>
+      </div>
+    </div>
+  </div>
+</section>

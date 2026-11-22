@@ -23,10 +23,14 @@ def _combo_json(conn, combo_id):
 
   items_db = conn.execute(
       """
-      SELECT ci.id, ci.producto_id, p.nombre AS producto_nombre, ci.cantidad, p.stock AS stock_actual,
+      SELECT ci.id, ci.producto_id, p.nombre AS producto_nombre, ci.presentacion_id,
+             COALESCE(pr.nombre, 'Sin presentación') AS presentacion_nombre,
+             COALESCE(pr.factor, 1) AS presentacion_factor,
+             ci.cantidad, p.stock AS stock_actual,
              ci.costo_base, ci.admin_gain, ci.inv_gain, ci.flete
       FROM combo_items ci
       JOIN productos p ON p.id = ci.producto_id
+      LEFT JOIN presentaciones pr ON pr.id = ci.presentacion_id
       WHERE ci.combo_id = ?
       ORDER BY p.nombre COLLATE NOCASE
       """,
@@ -42,8 +46,10 @@ def _combo_json(conn, combo_id):
 
   for it in items_db:
     cant = int(it["cantidad"])
+    factor = int(it["presentacion_factor"] or 1)
     stock = int(it["stock_actual"] or 0)
-    posibles = stock // cant if cant > 0 else 0
+    unidades_por_combo_item = cant * max(factor, 1)
+    posibles = stock // unidades_por_combo_item if unidades_por_combo_item > 0 else 0
     if posibles < max_combos:
       max_combos = posibles
 
@@ -61,7 +67,11 @@ def _combo_json(conn, combo_id):
         "id": it["id"],
         "productoId": it["producto_id"],
         "productoNombre": it["producto_nombre"],
+        "presentacionId": it["presentacion_id"],
+        "presentacionNombre": it["presentacion_nombre"],
+        "presentacionFactor": factor,
         "cantidad": cant,
+        "unidades": unidades_por_combo_item,
         "stockActual": stock,
         "costoBase": costo,
         "adminGain": admin,
@@ -114,17 +124,19 @@ def api_listar_combos():
 @api_combos_bp.route("/api/combo", methods=["POST", "PUT"])
 def api_guardar_combo():
   data = request.json or {}
-  nombre = str(data.get("nombre", "")).strip()
-  if not nombre:
-    return jsonify({"error": "El nombre del combo es obligatorio."}), 400
+  from app.schemas import ComboGuardarSchema, parse_payload
+  try:
+    val = parse_payload(ComboGuardarSchema, data)
+  except ValueError as err:
+    return jsonify({"error": str(err)}), 400
 
-  items_in = data.get("items") or []
-  if not isinstance(items_in, list) or len(items_in) == 0:
+  nombre = val.nombre
+  if not val.items:
     return jsonify({"error": "El combo debe incluir al menos un producto."}), 400
 
   conn = get_db_connection()
   try:
-    combo_id = str(data.get("id", "")).strip() or "combo-" + str(__import__("time").time_ns())
+    combo_id = str(val.id or "").strip() or "combo-" + str(__import__("time").time_ns())
     existente = conn.execute("SELECT id FROM combos WHERE id = ?", (combo_id,)).fetchone()
 
     items_a_insertar = []
@@ -133,25 +145,43 @@ def api_guardar_combo():
     total_inv = 0.0
     total_flete = 0.0
 
-    for it in items_in:
-      pid = str(it.get("productoId", "")).strip()
-      cant = int(it.get("cantidad", 0))
-      if not pid or cant <= 0:
-        return jsonify({"error": "Cada producto debe tener una cantidad válida mayor a 0."}), 400
-      
-      base = _decimal_no_negativo(it.get("costoBase", 0))
-      admin = _decimal_no_negativo(it.get("adminGain", 0))
-      inv = _decimal_no_negativo(it.get("invGain", 0))
-      flete = _decimal_no_negativo(it.get("flete", 0))
-
-      if None in (base, admin, inv, flete):
-        return jsonify({"error": "Los valores de precio deben ser números válidos."}), 400
-
+    for it in val.items:
+      pid = str(it.productoId).strip()
+      cant = int(it.cantidad)
       prod = conn.execute("SELECT id FROM productos WHERE id = ?", (pid,)).fetchone()
       if not prod:
         return jsonify({"error": f"El producto {pid} no existe en el catálogo."}), 400
-      
-      items_a_insertar.append((pid, cant, base, admin, inv, flete))
+
+      pres_id = str(it.presentacionId or "").strip()
+      if not pres_id:
+        pres = conn.execute("""
+          SELECT pp.presentacion_id, pp.base_price, pp.admin_gain, pp.inv_gain, pp.flete
+          FROM producto_presentaciones pp
+          JOIN presentaciones pr ON pr.id = pp.presentacion_id
+          WHERE pp.producto_id=? AND pp.activa=1 AND pr.activa=1
+          ORDER BY pr.orden, pr.factor, pr.nombre COLLATE NOCASE LIMIT 1
+        """, (pid,)).fetchone()
+        if not pres:
+          return jsonify({"error": f"El producto {pid} no tiene presentaciones disponibles."}), 400
+        pres_id = pres["presentacion_id"]
+      else:
+        pres = conn.execute("""
+          SELECT pp.presentacion_id, pp.base_price, pp.admin_gain, pp.inv_gain, pp.flete
+          FROM producto_presentaciones pp
+          JOIN presentaciones pr ON pr.id = pp.presentacion_id
+          WHERE pp.producto_id=? AND pp.presentacion_id=? AND pp.activa=1 AND pr.activa=1
+        """, (pid, pres_id)).fetchone()
+        if not pres:
+          return jsonify({"error": f"La presentación seleccionada no está disponible para el producto {pid}."}), 400
+
+      base = float(it.costoBase if it.costoBase is not None else pres["base_price"] or 0)
+      admin = float(it.adminGain if it.adminGain is not None else pres["admin_gain"] or 0)
+      inv = float(it.invGain if it.invGain is not None else pres["inv_gain"] or 0)
+      flete = float(it.flete if it.flete is not None else pres["flete"] or 0)
+      if None in (base, admin, inv, flete):
+        return jsonify({"error": "Los valores de precio deben ser números válidos."}), 400
+
+      items_a_insertar.append((pid, pres_id, cant, base, admin, inv, flete))
       total_costo += base * cant
       total_admin += admin * cant
       total_inv += inv * cant
@@ -169,13 +199,13 @@ def api_guardar_combo():
           (combo_id, nombre, total_costo, total_admin, total_inv, total_flete),
       )
 
-    for pid, cant, base, admin, inv, flete in items_a_insertar:
+    for pid, pres_id, cant, base, admin, inv, flete in items_a_insertar:
       conn.execute(
           """
-          INSERT INTO combo_items (combo_id, producto_id, cantidad, costo_base, admin_gain, inv_gain, flete)
-          VALUES (?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO combo_items (combo_id, producto_id, presentacion_id, cantidad, costo_base, admin_gain, inv_gain, flete)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
           """,
-          (combo_id, pid, cant, base, admin, inv, flete),
+          (combo_id, pid, pres_id, cant, base, admin, inv, flete),
       )
 
     conn.commit()

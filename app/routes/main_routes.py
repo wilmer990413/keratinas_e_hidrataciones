@@ -28,17 +28,59 @@ def _mapear_transacciones(conn, rows):
         (r["id"],),
     ).fetchall()
     item_rows = conn.execute(
-        """SELECT producto_id, producto_nombre, unidades, presentacion_id,
-                  presentacion_nombre, factor_presentacion
-           FROM venta_items WHERE transaccion_id=? ORDER BY id""",
+        """SELECT vi.producto_id, vi.producto_nombre, vi.unidades, vi.presentacion_id,
+                  vi.presentacion_nombre, vi.factor_presentacion,
+                  vi.inversionista_id,
+                  COALESCE(vi.inversionista_nombre, inv.nombre) AS inversionista_nombre,
+                  COALESCE(vi.costo_inversion, 0) AS costo_inversion,
+                  COALESCE(vi.ganancia_inversionista, 0) AS ganancia_inversionista
+           FROM venta_items vi
+           LEFT JOIN productos p ON p.id = vi.producto_id
+           LEFT JOIN inversionistas inv ON inv.id = COALESCE(vi.inversionista_id, p.inversionista_id)
+           WHERE vi.transaccion_id=? ORDER BY vi.id""",
         (r["id"],),
     ).fetchall()
+
+    es_producto = str(r["tipo_servicio"]).startswith("Prod:")
+    inversionistas_map = {}
+    for it in item_rows:
+      inv_nombre = it["inversionista_nombre"]
+      costo = float(it["costo_inversion"] or 0)
+      gan = float(it["ganancia_inversionista"] or 0)
+      if inv_nombre:
+        if inv_nombre not in inversionistas_map:
+          inversionistas_map[inv_nombre] = {"nombre": inv_nombre, "costoInversion": 0.0, "ganancia": 0.0}
+        inversionistas_map[inv_nombre]["costoInversion"] = round(inversionistas_map[inv_nombre]["costoInversion"] + costo, 2)
+        inversionistas_map[inv_nombre]["ganancia"] = round(inversionistas_map[inv_nombre]["ganancia"] + gan, 2)
+      elif costo > 0:
+        if "Sin inversionista" not in inversionistas_map:
+          inversionistas_map["Sin inversionista"] = {"nombre": "Sin inversionista", "costoInversion": 0.0, "ganancia": 0.0}
+        inversionistas_map["Sin inversionista"]["costoInversion"] = round(inversionistas_map["Sin inversionista"]["costoInversion"] + costo, 2)
+
+    if es_producto and not inversionistas_map and (r["inversion_share"] or 0) > 0:
+      row_inv = conn.execute(
+          """SELECT inv.nombre
+             FROM venta_items vi
+             JOIN productos p ON p.id = vi.producto_id
+             JOIN inversionistas inv ON inv.id = p.inversionista_id
+             WHERE vi.transaccion_id = ? LIMIT 1""",
+          (r["id"],)
+      ).fetchone()
+      inv_nom = row_inv["nombre"] if row_inv else "Sin inversionista"
+      inversionistas_map[inv_nom] = {
+          "nombre": inv_nom,
+          "costoInversion": float(r["inversion_share"] or 0),
+          "ganancia": float(r["ganancia_inv_share"] or 0)
+      }
+
+    inversionistas_lista = list(inversionistas_map.values())
+
     transacciones.append({
         "id": r["id"],
         "fechaHora": r["fecha_hora"],
         "cliente": r["cliente"],
         "tipoServicio": r["tipo_servicio"],
-        "tipo": "producto" if str(r["tipo_servicio"]).startswith("Prod:") else "servicio",
+        "tipo": "producto" if es_producto else "servicio",
         "total": r["total"],
         "adminShare": r["admin_share"],
         "auxShare": r["aux_share"],
@@ -49,6 +91,7 @@ def _mapear_transacciones(conn, rows):
         "fleteTotal": r["flete_total"],
         "activa": r["activa"],
         "jornadaId": r["jornada_id"],
+        "inversionistas": inversionistas_lista,
         "auxiliares": [dict(a) for a in aux_rows],
         "items": [dict(i) for i in item_rows],
     })
@@ -65,6 +108,7 @@ def obtener_historico_ventas():
   fecha_inicio = request.args.get('inicio')
   fecha_fin = request.args.get('fin')
   tipo = request.args.get('tipo', 'todos')
+  busqueda = (request.args.get('q') or '').strip()
   try:
     page = max(1, int(request.args.get('page', 1)))
   except ValueError:
@@ -84,6 +128,10 @@ def obtener_historico_ventas():
     tipo_sql = _filtro_tipo_sql(tipo, [])
     if tipo_sql:
       where.append(tipo_sql[5:] if tipo_sql.startswith(" AND ") else tipo_sql)
+    if busqueda:
+      patron = f"%{busqueda}%"
+      where.append("(cliente LIKE ? OR tipo_servicio LIKE ? OR EXISTS (SELECT 1 FROM venta_items vi WHERE vi.transaccion_id = transacciones.id AND vi.producto_nombre LIKE ?))")
+      params.extend([patron, patron, patron])
     if not where:
       where.append("1=1")
 
@@ -111,6 +159,7 @@ def exportar_ventas_excel():
   fecha_inicio = request.args.get('inicio')
   fecha_fin = request.args.get('fin')
   tipo = request.args.get('tipo', 'todos')
+  busqueda = (request.args.get('q') or '').strip()
   jornada_actual = request.args.get('jornada') == 'actual'
 
   conn = get_db_connection()
@@ -134,11 +183,32 @@ def exportar_ventas_excel():
     tipo_sql = _filtro_tipo_sql(tipo, [])
     if tipo_sql:
       where.append(tipo_sql[5:])
+    if busqueda:
+      patron = f"%{busqueda}%"
+      where.append("(t.cliente LIKE ? OR t.tipo_servicio LIKE ? OR EXISTS (SELECT 1 FROM venta_items vi WHERE vi.transaccion_id = t.id AND vi.producto_nombre LIKE ?))")
+      params.extend([patron, patron, patron])
 
     where_sql = (" WHERE " + " AND ".join(where)) if where else ""
-    query = f"""
-      SELECT t.fecha_hora AS Fecha,\n             CASE WHEN t.tipo_servicio LIKE 'Prod:%' THEN 'Producto' ELSE 'Servicio' END AS Tipo,\n             t.cliente AS Cliente,\n             t.tipo_servicio AS Detalle,\n             ROUND(t.total, 2) AS Total,\n             ROUND(t.admin_share, 2) AS 'Ganancia Admin',\n             ROUND(t.aux_share, 2) AS 'Pago Auxiliares',\n             ROUND(COALESCE(t.ganancia_inv_share, 0), 2) AS 'Ganancia Inversionista',\n             ROUND(COALESCE(t.inversion_share, 0), 2) AS Inversion,\n             ROUND(COALESCE(t.flete_total, 0), 2) AS Fletes\n      FROM transacciones t{where_sql}\n      ORDER BY t.rowid DESC\n    """
-    df = pd.read_sql_query(query, conn, params=params)
+    rows = conn.execute(f"SELECT * FROM transacciones t{where_sql} ORDER BY t.rowid DESC", params).fetchall()
+    transacciones = _mapear_transacciones(conn, rows)
+
+    filas = []
+    for tx in transacciones:
+      inv_txt = ", ".join(f"{inv['nombre']} (${inv['costoInversion']:,.0f})" for inv in tx["inversionistas"]) if tx["inversionistas"] else ("—" if tx["tipo"] == "servicio" else "Sin inversionista")
+      filas.append({
+          "Fecha": tx["fechaHora"],
+          "Tipo": "Producto" if tx["tipo"] == "producto" else "Servicio",
+          "Cliente": tx["cliente"],
+          "Detalle": tx["tipoServicio"],
+          "Total": round(tx["total"], 2),
+          "Ganancia Admin": round(tx["adminShare"], 2),
+          "Pago Auxiliares": round(tx["auxShare"], 2),
+          "Inversionista / Costo": inv_txt,
+          "Ganancia Inversionista": round(tx["gananciaInvShare"] or 0, 2),
+          "Costo Inversión Total": round(tx["inversionShare"] or 0, 2),
+          "Fletes": round(tx["fleteTotal"] or 0, 2),
+      })
+    df = pd.DataFrame(filas)
   finally:
     conn.close()
 
@@ -161,3 +231,21 @@ def exportar_ventas_excel():
       as_attachment=True,
       download_name=filename,
   )
+
+
+@main_bp.route('/api/sistema/backups', methods=['GET'])
+def api_listar_backups():
+  from app.backup import listar_backups
+  return jsonify(listar_backups())
+
+
+@main_bp.route('/api/sistema/backup', methods=['POST'])
+def api_crear_backup_manual():
+  from app.backup import crear_backup
+  data = request.get_json(silent=True) or {}
+  motivo = str(data.get("motivo", "manual_admin")).strip()
+  archivo = crear_backup(motivo=motivo)
+  if archivo:
+    return jsonify({"status": "success", "archivo": archivo.name})
+  return jsonify({"error": "No se pudo generar la copia de seguridad."}), 500
+
