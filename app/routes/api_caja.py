@@ -186,6 +186,11 @@ def obtener_resumen_caja():
     try:
         data = _obtener_resumen_caja(conn, fecha_dia)
         return jsonify(data)
+    except Exception as e:
+        # Log the error for debugging
+        import traceback, sys
+        traceback.print_exc(file=sys.stderr)
+        return jsonify({"error": "Error interno al obtener resumen", "details": str(e)}), 500
     finally:
         conn.close()
 
