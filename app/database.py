@@ -578,10 +578,11 @@ def init_db():
   for venta in ventas_antiguas:
     items = cursor.execute("""
         SELECT id, unidades, COALESCE(costo_inversion,0) AS costo_inversion,
-               COALESCE(ganancia_inversionista,0) AS ganancia_inversionista
+               COALESCE(ganancia_inversionista,0) AS ganancia_inversionista,
+               COALESCE(precio_unitario,0) AS precio_unitario
         FROM venta_items WHERE transaccion_id=? ORDER BY id
     """, (venta["id"],)).fetchall()
-    pendientes = [x for x in items if float(x["precio_unitario"] if "precio_unitario" in x.keys() else 0) <= 0]
+    pendientes = [x for x in items if float(x["precio_unitario"] or 0) <= 0]
     if not pendientes:
       continue
     total_unidades = sum(max(int(x["unidades"] or 0), 0) for x in items)

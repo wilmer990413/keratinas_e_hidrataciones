@@ -161,36 +161,11 @@ def api_estado():
       ).fetchall()
   ]
 
+  from app.routes.main_routes import _mapear_transacciones
   rows = conn.execute(
       "SELECT * FROM transacciones WHERE jornada_id = ? AND activa = 1 ORDER BY rowid DESC", (jornada["id"],)
   ).fetchall()
-  transacciones = []
-  for r in rows:
-    aux_rows = conn.execute(
-        """
-        SELECT a.id, a.nombre, sa.porcentaje, sa.pago
-        FROM servicio_auxiliares sa
-        JOIN auxiliares a ON a.id = sa.auxiliar_id
-        WHERE sa.transaccion_id = ?
-        ORDER BY a.nombre COLLATE NOCASE
-        """, (r["id"],)
-    ).fetchall()
-    transacciones.append({
-        "id": r["id"],
-        "fechaHora": r["fecha_hora"],
-        "cliente": r["cliente"],
-        "tipoServicio": r["tipo_servicio"],
-        "tipo": "producto" if str(r["tipo_servicio"]).startswith("Prod:") else "servicio",  # <-- AGREGAR ESTA LÍNEA
-        "total": r["total"],
-        "adminShare": r["admin_share"],
-        "auxShare": r["aux_share"],
-        "materiaPrimaShare": r["materia_prima_share"] or 0,
-        "invShare": r["inv_share"] or 0,
-        "inversionShare": r["inversion_share"],
-        "gananciaInvShare": r["ganancia_inv_share"],
-        "fleteTotal": r["flete_total"] or 0,
-        "auxiliares": [dict(a) for a in aux_rows],
-    })
+  transacciones = _mapear_transacciones(conn, rows)
 
   auxiliares = [dict(r) for r in conn.execute(
       "SELECT id, nombre, documento, telefono, activo, fecha_ingreso FROM auxiliares ORDER BY activo DESC, nombre COLLATE NOCASE"

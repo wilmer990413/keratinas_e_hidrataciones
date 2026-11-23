@@ -54,8 +54,8 @@ def _descontar_stock(conn, items):
       raise ValueError("El producto o la presentación seleccionada ya no están disponibles. Actualice la página e intente de nuevo.")
 
     unidades = cantidad * int(rel["factor"])
-    costo_base = round(float(rel["base_price"] or 0) * cantidad, 2)
-    ganancia_inv = round(float(rel["inv_gain"] or 0) * cantidad, 2)
+    costo_base = round(float(rel["base_price"] or 0) * unidades, 2)
+    ganancia_inv = round(float(rel["inv_gain"] or 0) * unidades, 2)
     key = (pid, pres_id)
     agrupados[key] = {
       "productoId": pid,
@@ -69,8 +69,8 @@ def _descontar_stock(conn, items):
       "inversionistaNombre": rel["inversionista_nombre"],
       "costoInversion": round(agrupados.get(key, {}).get("costoInversion", 0) + costo_base, 2),
       "gananciaInversionista": round(agrupados.get(key, {}).get("gananciaInversionista", 0) + ganancia_inv, 2),
-      "adminGain": round(agrupados.get(key, {}).get("adminGain", 0) + float(rel["admin_gain"] or 0) * cantidad, 2),
-      "flete": round(agrupados.get(key, {}).get("flete", 0) + float(rel["flete"] or 0) * cantidad, 2),
+      "adminGain": round(agrupados.get(key, {}).get("adminGain", 0) + float(rel["admin_gain"] or 0) * unidades, 2),
+      "flete": round(agrupados.get(key, {}).get("flete", 0) + float(rel["flete"] or 0) * unidades, 2),
     }
 
   # Si el mismo producto aparece con presentaciones diferentes, el stock se comparte.
@@ -250,8 +250,8 @@ def api_transaccion():
            item.get("inversionistaId"), item.get("inversionistaNombre"),
            item.get("costoInversion", 0), item.get("gananciaInversionista", 0),
            round((float(item.get("costoInversion", 0)) + float(item.get("gananciaInversionista", 0)) + float(item.get("adminGain", 0)) + float(item.get("flete", 0))) / max(int(item["unidades"]), 1), 4),
-           float(item.get("adminGain", 0)) / max(int(item["unidades"]), 1),
-           float(item.get("flete", 0)) / max(int(item["unidades"]), 1)),
+           float(item.get("adminGain", 0)),
+           float(item.get("flete", 0))),
       )
 
     # Insertar items de combos en venta_items (para que al eliminar la venta, el stock retorne intacto)
@@ -268,8 +268,8 @@ def api_transaccion():
            it.get("inversionistaId"), it.get("inversionistaNombre"),
            it.get("costoInversion", 0), it.get("gananciaInversionista", 0),
            round((float(it.get("costoInversion", 0)) + float(it.get("gananciaInversionista", 0))) / max(int(it["unidades"]), 1), 4),
-           float(it.get("adminGain", 0)) / max(int(it["unidades"]), 1),
-           float(it.get("flete", 0)) / max(int(it["unidades"]), 1)),
+           float(it.get("adminGain", 0)),
+           float(it.get("flete", 0))),
       )
 
     conn.commit()
@@ -401,24 +401,22 @@ def api_editar_transaccion(id_tx):
               raise ValueError("No se puede agregar manualmente una línea de combo desde este editor.")
             factor = 1
             pres_nombre = old["presentacion_nombre"] or "Combo"
-            cantidad_historica = max(int(old["unidades"] or 0), 1)
-            base_pres_default = float(old["costo_inversion"] or 0) / cantidad_historica
-            inv_pres_default = float(old["ganancia_inversionista"] or 0) / cantidad_historica
-            flete_pres_default = float(old["flete"] or 0) / cantidad_historica
-            admin_pres_default = float(old["ganancia_admin"] or 0) / cantidad_historica
+            unidades_historicas = max(int(old["unidades"] or 0), 1)
+            base_unit_default = float(old["costo_inversion"] or 0) / unidades_historicas
+            inv_unit_default = float(old["ganancia_inversionista"] or 0) / unidades_historicas
+            flete_unit_default = float(old["flete"] or 0) / unidades_historicas
+            admin_unit_default = float(old["ganancia_admin"] or 0) / unidades_historicas
             inversionista_id = old["inversionista_id"]
             inversionista_nombre = old["inversionista_nombre"]
           else:
             if old and old["producto_id"] == pid and old["presentacion_id"] == pres_id:
-              # Conserva el costo histórico como valor inicial. El editor actual
-              # puede reemplazarlo explícitamente mediante el desglose de precios.
               factor = int(old["factor_presentacion"] or 1)
               pres_nombre = old["presentacion_nombre"] or "Presentación"
-              cantidad_historica = max(int(old["unidades"] or 0) // max(factor, 1), 1)
-              base_pres_default = float(old["costo_inversion"] or 0) / cantidad_historica
-              inv_pres_default = float(old["ganancia_inversionista"] or 0) / cantidad_historica
-              flete_pres_default = float(old["flete"] or 0) / cantidad_historica
-              admin_pres_default = float(old["ganancia_admin"] or 0) / cantidad_historica
+              unidades_historicas = max(int(old["unidades"] or 0), 1)
+              base_unit_default = float(old["costo_inversion"] or 0) / unidades_historicas
+              inv_unit_default = float(old["ganancia_inversionista"] or 0) / unidades_historicas
+              flete_unit_default = float(old["flete"] or 0) / unidades_historicas
+              admin_unit_default = float(old["ganancia_admin"] or 0) / unidades_historicas
               inversionista_id = old["inversionista_id"]
               inversionista_nombre = old["inversionista_nombre"]
             else:
@@ -436,38 +434,32 @@ def api_editar_transaccion(id_tx):
                 raise ValueError("El producto o la presentación seleccionada no están disponibles.")
               factor = int(rel["factor"])
               pres_nombre = rel["presentacion_nombre"]
-              base_pres_default = float(rel["base_price"] or 0)
-              admin_pres_default = float(rel["admin_gain"] or 0)
-              inv_pres_default = float(rel["inv_gain"] or 0)
-              flete_pres_default = float(rel["flete"] or 0)
+              base_unit_default = float(rel["base_price"] or 0)
+              admin_unit_default = float(rel["admin_gain"] or 0)
+              inv_unit_default = float(rel["inv_gain"] or 0)
+              flete_unit_default = float(rel["flete"] or 0)
               inversionista_id = rel["inversionista_id"]
               inversionista_nombre = rel["inversionista_nombre"]
 
-          # El editor actual envía el desglose completo por presentación.
-          # Cuando viene, esos cuatro valores son la fuente de verdad de la línea.
+          # El editor actual envía el desglose completo unitario por presentación.
           componentes_enviados = all(
             getattr(raw, nombre) is not None
             for nombre in ("precioBase", "gananciaAdmin", "gananciaInv", "flete")
           )
           if componentes_enviados:
-            base_pres = float(raw.precioBase)
-            admin_pres = float(raw.gananciaAdmin)
-            inv_pres = float(raw.gananciaInv)
-            flete_pres = float(raw.flete)
-            precio_final_pres = base_pres + admin_pres + inv_pres + flete_pres
-            if raw.precioFinal is not None and abs(float(raw.precioFinal) - precio_final_pres) > 0.01:
+            base_unit = float(raw.precioBase)
+            admin_unit = float(raw.gananciaAdmin)
+            inv_unit = float(raw.gananciaInv)
+            flete_unit = float(raw.flete)
+            precio_final_unit = base_unit + admin_unit + inv_unit + flete_unit
+            if raw.precioFinal is not None and abs(float(raw.precioFinal) - precio_final_unit) > 0.01:
               raise ValueError("El precio final no coincide con la suma de costo base, ganancia admin, ganancia del inversionista y flete.")
           else:
-            base_pres = base_pres_default
-            admin_pres = admin_pres_default
-            inv_pres = inv_pres_default
-            flete_pres = flete_pres_default
-            precio_final_pres = base_pres + admin_pres + inv_pres + flete_pres
-
-          base_unit = base_pres / max(factor, 1)
-          admin_unit = admin_pres / max(factor, 1)
-          inv_unit = inv_pres / max(factor, 1)
-          flete_unit = flete_pres / max(factor, 1)
+            base_unit = base_unit_default
+            admin_unit = admin_unit_default
+            inv_unit = inv_unit_default
+            flete_unit = flete_unit_default
+            precio_final_unit = base_unit + admin_unit + inv_unit + flete_unit
 
           producto = conn.execute("SELECT nombre, stock FROM productos WHERE id=?", (pid,)).fetchone()
           if not producto:
@@ -477,8 +469,6 @@ def api_editar_transaccion(id_tx):
           precio_unit = base_unit + admin_unit + inv_unit + flete_unit
           if precio_unit < 0:
             raise ValueError("El precio no puede ser negativo.")
-          if raw.precioFinal is not None and abs(float(raw.precioFinal) / max(factor, 1) - precio_unit) > 0.01:
-            raise ValueError("El precio final no coincide con el desglose indicado.")
 
           costo_total = base_unit * unidades
           gan_inv_total = inv_unit * unidades
@@ -640,6 +630,7 @@ def _descontar_stock_combos(conn, combos_data):
     componentes = conn.execute(
         """
         SELECT ci.producto_id, ci.presentacion_id, ci.cantidad, ci.costo_base, ci.inv_gain,
+               ci.admin_gain, ci.flete,
                COALESCE(pr.nombre, 'Presentación') AS presentacion_nombre,
                COALESCE(pr.factor, 1) AS presentacion_factor,
                p.nombre, p.stock, p.inversionista_id, inv.nombre AS inversionista_nombre
@@ -659,6 +650,8 @@ def _descontar_stock_combos(conn, combos_data):
     for comp in componentes:
       factor = max(int(comp["presentacion_factor"] or 1), 1)
       unidades_a_descontar = int(comp["cantidad"]) * factor * cantidad_combos
+      admin_item = float(comp["admin_gain"] or 0) * cantidad_combos if float(comp["admin_gain"] or 0) > 0 else round(float(combo["admin_gain"] or 0) * cantidad_combos * (int(comp["cantidad"]) * factor) / max(unidades_por_combo, 1), 2)
+      flete_item = float(comp["flete"] or 0) * cantidad_combos if float(comp["flete"] or 0) > 0 else round(float(combo["flete"] or 0) * cantidad_combos * (int(comp["cantidad"]) * factor) / max(unidades_por_combo, 1), 2)
       items_deducir.append({
           "productoId": comp["producto_id"],
           "productoNombre": comp["nombre"],
@@ -672,8 +665,8 @@ def _descontar_stock_combos(conn, combos_data):
           "inversionistaNombre": comp["inversionista_nombre"],
           "costoInversion": round(float(comp["costo_base"] or 0) * cantidad_combos, 2),
           "gananciaInversionista": round(float(comp["inv_gain"] or 0) * cantidad_combos, 2),
-          "adminGain": round(float(combo["admin_gain"] or 0) * cantidad_combos * (int(comp["cantidad"]) * factor) / max(unidades_por_combo, 1), 2),
-          "flete": round(float(combo["flete"] or 0) * cantidad_combos * (int(comp["cantidad"]) * factor) / max(unidades_por_combo, 1), 2),
+          "adminGain": round(admin_item, 2),
+          "flete": round(flete_item, 2),
       })
 
   # Agrupar por producto por si varios combos usan el mismo producto

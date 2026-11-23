@@ -57,21 +57,32 @@ def _mapear_transacciones(conn, rows):
           inversionistas_map["Sin inversionista"] = {"nombre": "Sin inversionista", "costoInversion": 0.0, "ganancia": 0.0}
         inversionistas_map["Sin inversionista"]["costoInversion"] = round(inversionistas_map["Sin inversionista"]["costoInversion"] + costo, 2)
 
-    if es_producto and not inversionistas_map and (r["inversion_share"] or 0) > 0:
-      row_inv = conn.execute(
-          """SELECT inv.nombre
-             FROM venta_items vi
-             JOIN productos p ON p.id = vi.producto_id
-             JOIN inversionistas inv ON inv.id = p.inversionista_id
-             WHERE vi.transaccion_id = ? LIMIT 1""",
-          (r["id"],)
-      ).fetchone()
-      inv_nom = row_inv["nombre"] if row_inv else "Sin inversionista"
-      inversionistas_map[inv_nom] = {
-          "nombre": inv_nom,
-          "costoInversion": float(r["inversion_share"] or 0),
-          "ganancia": float(r["ganancia_inv_share"] or 0)
-      }
+    if es_producto:
+      if not inversionistas_map and ((r["inversion_share"] or 0) > 0 or r["inversionista_id"]):
+        inv_nom = None
+        if r["inversionista_id"]:
+          inv_row = conn.execute("SELECT nombre FROM inversionistas WHERE id = ?", (r["inversionista_id"],)).fetchone()
+          if inv_row:
+            inv_nom = inv_row["nombre"]
+        if not inv_nom:
+          row_inv = conn.execute(
+              """SELECT inv.nombre
+                 FROM venta_items vi
+                 JOIN productos p ON p.id = vi.producto_id
+                 JOIN inversionistas inv ON inv.id = p.inversionista_id
+                 WHERE vi.transaccion_id = ? LIMIT 1""",
+              (r["id"],)
+          ).fetchone()
+          inv_nom = row_inv["nombre"] if row_inv else "Sin inversionista"
+        inversionistas_map[inv_nom] = {
+            "nombre": inv_nom,
+            "costoInversion": max(0.0, float(r["inversion_share"] or 0) - float(r["flete_total"] or 0)),
+            "ganancia": float(r["ganancia_inv_share"] or 0)
+        }
+      elif len(inversionistas_map) == 1 and r["ganancia_inv_share"] is not None:
+        single_inv = list(inversionistas_map.keys())[0]
+        inversionistas_map[single_inv]["ganancia"] = float(r["ganancia_inv_share"] or 0)
+        inversionistas_map[single_inv]["costoInversion"] = max(0.0, float(r["inversion_share"] or 0) - float(r["flete_total"] or 0))
 
     inversionistas_lista = list(inversionistas_map.values())
 
@@ -109,6 +120,7 @@ def obtener_historico_ventas():
   fecha_fin = request.args.get('fin')
   tipo = request.args.get('tipo', 'todos')
   busqueda = (request.args.get('q') or '').strip()
+  inv_id = (request.args.get('inv_id') or '').strip()
   try:
     page = max(1, int(request.args.get('page', 1)))
   except ValueError:
@@ -132,6 +144,9 @@ def obtener_historico_ventas():
       patron = f"%{busqueda}%"
       where.append("(cliente LIKE ? OR tipo_servicio LIKE ? OR EXISTS (SELECT 1 FROM venta_items vi WHERE vi.transaccion_id = transacciones.id AND vi.producto_nombre LIKE ?))")
       params.extend([patron, patron, patron])
+    if inv_id:
+      where.append("EXISTS (SELECT 1 FROM venta_items vi WHERE vi.transaccion_id = transacciones.id AND vi.inversionista_id = ?)")
+      params.append(inv_id)
     if not where:
       where.append("1=1")
 
@@ -160,6 +175,7 @@ def exportar_ventas_excel():
   fecha_fin = request.args.get('fin')
   tipo = request.args.get('tipo', 'todos')
   busqueda = (request.args.get('q') or '').strip()
+  inv_id = (request.args.get('inv_id') or '').strip()
   jornada_actual = request.args.get('jornada') == 'actual'
 
   conn = get_db_connection()
@@ -187,6 +203,9 @@ def exportar_ventas_excel():
       patron = f"%{busqueda}%"
       where.append("(t.cliente LIKE ? OR t.tipo_servicio LIKE ? OR EXISTS (SELECT 1 FROM venta_items vi WHERE vi.transaccion_id = t.id AND vi.producto_nombre LIKE ?))")
       params.extend([patron, patron, patron])
+    if inv_id:
+      where.append("EXISTS (SELECT 1 FROM venta_items vi WHERE vi.transaccion_id = t.id AND vi.inversionista_id = ?)")
+      params.append(inv_id)
 
     where_sql = (" WHERE " + " AND ".join(where)) if where else ""
     rows = conn.execute(f"SELECT * FROM transacciones t{where_sql} ORDER BY t.rowid DESC", params).fetchall()

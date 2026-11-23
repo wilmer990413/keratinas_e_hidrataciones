@@ -16,6 +16,23 @@ function fechaHoraColombia() {
   }).format(new Date()).replace(' ', ' ');
 }
 
+// Nombres cortos de los inversionistas conocidos para columnas dinámicas
+const INV_CORTOS = {
+  'Leidy Carolina Vanegas Cañon': 'Carolina',
+  'Wilmer Rodolfo Castro Ladino': 'Wilmer',
+  'Ester Judith Figueredo': 'Ester',
+};
+
+function _etiquetaInv(nombre) {
+  if (!nombre) return '';
+  if (INV_CORTOS[nombre]) return INV_CORTOS[nombre];
+  const norm = nombre.toLowerCase();
+  if (norm.includes('carolina')) return 'Carolina';
+  if (norm.includes('wilmer')) return 'Wilmer';
+  if (norm.includes('ester')) return 'Ester';
+  return nombre.split(' ')[0] || nombre;
+}
+
 window.onload = function () {
   const dateDisplay = document.getElementById('currentDateDisplay');
   if (dateDisplay) {
@@ -52,6 +69,7 @@ async function cargarEstadoBackend() {
   if (typeof renderTablaInversionistas === 'function') renderTablaInversionistas();
   updateDashboard();
   renderTablaTransacciones();
+  if (typeof poblarFiltroInversionistas === 'function') poblarFiltroInversionistas();
 }
 
 function switchTab(tabId) {
@@ -103,68 +121,92 @@ function closeNotification() {
 }
 
 function updateDashboard() {
-  let total = 0, admin = 0, aux = 0, inv = 0, mat = 0, flete = 0, servVentas = 0, prodVentas = 0;
-  let gananciaInv = 0, inversionBase = 0;
+  let valorVenta = 0, valorInicial = 0, ganancia = 0, flete = 0, gananciaTotal = 0;
+  let erikaAdmin = 0, auxTotal = 0, servVentas = 0, prodVentas = 0;
+
+  // Mapa de inversionistas: inicializar con todos los activos registrados a 0
+  // para que incluso si no tienen ventas se muestren en el panel
+  const invMap = {};
+  const activeInvs = (state.inversionistas || []).filter(i => Number(i.activo) === 1);
+  activeInvs.forEach(inv => {
+    invMap[inv.nombre] = 0;
+  });
 
   // 1. Servicios de peluquería
   state.serviciosDia.forEach(s => {
-    total += Number(s.total || 0);
-    admin += Number(s.adminShare || 0);
-    aux += Number(s.auxShare || 0);
-    
+    const total = Number(s.total || 0);
+    const adm = Number(s.adminShare || 0);
+    const aux = Number(s.auxShare || 0);
     const matPrima = Number(s.materiaPrimaShare || 0);
-    mat += matPrima;
-    inv += Number(s.invShare || matPrima);
-    inversionBase += matPrima;
-    gananciaInv += Math.max(0, Number(s.invShare || 0) - matPrima);
-    servVentas += Number(s.total || 0);
+
+    valorVenta += total;
+    valorInicial += matPrima;
+    const gan = adm + aux;
+    ganancia += gan;
+    gananciaTotal += gan;
+    erikaAdmin += adm;
+    auxTotal += aux;
+    servVentas += total;
   });
 
   // 2. Ventas de productos y combos
   state.ventasProductos.forEach(p => {
-    total += Number(p.total || 0);
-    admin += Number(p.adminShare || 0);
-    
-    const invParte = Number(p.invShare || 0);
-    inv += invParte;
-    flete += Number(p.fleteTotal || 0);
-    prodVentas += Number(p.total || 0);
+    const total = Number(p.total || 0);
+    const flt = Number(p.fleteTotal || 0);
+    const invShare = Number(p.inversionShare || 0);
+    // Valor inicial = costo base sin flete
+    const vInicial = Math.max(invShare - flt, 0);
+    const gan = total - vInicial;
+    const ganTot = gan - flt;
+    const adm = Number(p.adminShare || 0);
 
-    // Sumar ganancia del inversionista e inversión registradas
-    if (p.gananciaInvShare !== null && p.gananciaInvShare !== undefined) {
-      gananciaInv += Number(p.gananciaInvShare);
-    } else {
-      gananciaInv += Math.max(0, invParte - Number(p.inversionShare || 0));
-    }
+    valorVenta += total;
+    valorInicial += vInicial;
+    ganancia += gan;
+    flete += flt;
+    gananciaTotal += ganTot;
+    erikaAdmin += adm;
+    prodVentas += total;
 
-    if (p.inversionShare !== null && p.inversionShare !== undefined) {
-      inversionBase += Number(p.inversionShare);
-    } else {
-      inversionBase += Math.max(0, invParte - Number(p.gananciaInvShare || 0));
+    // Reparto a inversionistas
+    if (p.inversionistas && p.inversionistas.length > 0) {
+      p.inversionistas.forEach(inv => {
+        if (inv.nombre) {
+          invMap[inv.nombre] = (invMap[inv.nombre] || 0) + Number(inv.ganancia || 0);
+        }
+      });
+    } else if (p.gananciaInvShare) {
+      const primerInv = activeInvs[0]?.nombre || 'Inversionista';
+      invMap[primerInv] = (invMap[primerInv] || 0) + Number(p.gananciaInvShare || 0);
     }
   });
 
-  // Actualizar valores en pantalla
-  if (document.getElementById('dashTotalIngresos')) {
-    document.getElementById('dashTotalIngresos').textContent = `$${total.toLocaleString('es-CO')}`;
+  // Actualizar tarjetas principales
+  if (document.getElementById('dashValorVenta')) {
+    document.getElementById('dashValorVenta').textContent = `$${valorVenta.toLocaleString('es-CO')}`;
   }
-  if (document.getElementById('dashAdminTotal')) {
-    document.getElementById('dashAdminTotal').textContent = `$${admin.toLocaleString('es-CO')}`;
+  if (document.getElementById('dashValorInicial')) {
+    document.getElementById('dashValorInicial').textContent = `$${valorInicial.toLocaleString('es-CO')}`;
   }
-  if (document.getElementById('dashAuxTotal')) {
-    document.getElementById('dashAuxTotal').textContent = `$${aux.toLocaleString('es-CO')}`;
+  if (document.getElementById('dashGananciaBruta')) {
+    document.getElementById('dashGananciaBruta').textContent = `$${ganancia.toLocaleString('es-CO')}`;
   }
-  if (document.getElementById('dashInvTotal')) {
-    document.getElementById('dashInvTotal').textContent = `$${inv.toLocaleString('es-CO')}`;
+  if (document.getElementById('dashFleteTotal')) {
+    document.getElementById('dashFleteTotal').textContent = `$${flete.toLocaleString('es-CO')}`;
   }
+  if (document.getElementById('dashGananciaTotal')) {
+    document.getElementById('dashGananciaTotal').textContent = `$${gananciaTotal.toLocaleString('es-CO')}`;
+  }
+
+  // Desglose operativo
   if (document.getElementById('dashServiciosVentas')) {
     document.getElementById('dashServiciosVentas').textContent = `$${servVentas.toLocaleString('es-CO')}`;
   }
   if (document.getElementById('dashProductosVentas')) {
     document.getElementById('dashProductosVentas').textContent = `$${prodVentas.toLocaleString('es-CO')}`;
   }
-  if (document.getElementById('dashMateriaPrimaTotal')) {
-    document.getElementById('dashMateriaPrimaTotal').textContent = `$${mat.toLocaleString('es-CO')}`;
+  if (document.getElementById('dashAuxTotal')) {
+    document.getElementById('dashAuxTotal').textContent = `$${auxTotal.toLocaleString('es-CO')}`;
   }
   if (document.getElementById('dashFletesTotal')) {
     document.getElementById('dashFletesTotal').textContent = `$${flete.toLocaleString('es-CO')}`;
@@ -173,9 +215,101 @@ function updateDashboard() {
     document.getElementById('dashTotalTx').textContent = state.serviciosDia.length + state.ventasProductos.length;
   }
 
+  // Lista ordenada de inversionistas
+  const listaInvsNombres = Object.keys(invMap).sort((a, b) => _etiquetaInv(a).localeCompare(_etiquetaInv(b)));
+
+  // Renderizar tarjetas dinámicas de Inversionistas y Erika
+  const invContainer = document.getElementById('dashInversionistasCards');
+  if (invContainer) {
+    invContainer.innerHTML = '';
+    listaInvsNombres.forEach(nom => {
+      const gan = invMap[nom] || 0;
+      const card = document.createElement('div');
+      card.className = "bg-white dark:bg-cardbg p-4 rounded-2xl border border-gray-100 dark:border-gray-800 shadow-sm";
+      card.innerHTML = `
+        <div class="flex justify-between items-start">
+          <div>
+            <p class="text-[11px] font-bold text-purple-700 dark:text-purple-300 uppercase tracking-wider">${escapeHtml(_etiquetaInv(nom).toUpperCase())}</p>
+            <h3 class="text-2xl font-black mt-1 text-purple-700 dark:text-purple-300">$${gan.toLocaleString('es-CO')}</h3>
+          </div>
+          <div class="p-2.5 bg-purple-50 dark:bg-purple-950/50 text-purple-600 rounded-xl"><i class="fa-solid fa-user-tie text-base"></i></div>
+        </div>
+        <p class="text-[10px] text-gray-400 mt-2">Inversionista registrado</p>
+      `;
+      invContainer.appendChild(card);
+    });
+
+    const erikaCard = document.createElement('div');
+    erikaCard.className = "bg-white dark:bg-cardbg p-4 rounded-2xl border border-gray-100 dark:border-gray-800 shadow-sm";
+    erikaCard.innerHTML = `
+      <div class="flex justify-between items-start">
+        <div>
+          <p class="text-[11px] font-bold text-brand-600 dark:text-brand-400 uppercase tracking-wider">ERIKA</p>
+          <h3 class="text-2xl font-black mt-1 text-brand-600 dark:text-brand-400">$${erikaAdmin.toLocaleString('es-CO')}</h3>
+        </div>
+        <div class="p-2.5 bg-brand-50 dark:bg-brand-950/50 text-brand-600 rounded-xl"><i class="fa-solid fa-user-shield text-base"></i></div>
+      </div>
+      <p class="text-[10px] text-gray-400 mt-2">Ganancia Administradora</p>
+    `;
+    invContainer.appendChild(erikaCard);
+  }
+
+  // Renderizar tabla horizontal consolidada
+  const tblHeaders = document.getElementById('dashTablaHeaders');
+  const tblRow = document.getElementById('dashTablaRow');
+  if (tblHeaders && tblRow) {
+    let thHtml = `
+      <th class="p-3.5 whitespace-nowrap bg-gray-50 dark:bg-gray-800/80">VALOR VENTA</th>
+      <th class="p-3.5 whitespace-nowrap bg-gray-50 dark:bg-gray-800/80">VALOR INICIAL</th>
+      <th class="p-3.5 whitespace-nowrap bg-gray-50 dark:bg-gray-800/80">GANANCIA</th>
+      <th class="p-3.5 whitespace-nowrap bg-gray-50 dark:bg-gray-800/80">FLETE</th>
+      <th class="p-3.5 whitespace-nowrap bg-gray-50 dark:bg-gray-800/80">GANANCIA TOTAL</th>
+    `;
+    listaInvsNombres.forEach(nom => {
+      thHtml += `<th class="p-3.5 whitespace-nowrap bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 font-black">${escapeHtml(_etiquetaInv(nom).toUpperCase())}</th>`;
+    });
+    thHtml += `<th class="p-3.5 whitespace-nowrap bg-pink-50 dark:bg-pink-950/40 text-brand-600 dark:text-brand-400 font-black">ERIKA</th>`;
+    tblHeaders.innerHTML = thHtml;
+
+    let tdHtml = `
+      <td class="p-3.5 text-gray-900 dark:text-white">$${valorVenta.toLocaleString('es-CO')}</td>
+      <td class="p-3.5 text-amber-600 dark:text-amber-400">$${valorInicial.toLocaleString('es-CO')}</td>
+      <td class="p-3.5 text-green-600 dark:text-green-400">$${ganancia.toLocaleString('es-CO')}</td>
+      <td class="p-3.5 text-rose-500">$${flete.toLocaleString('es-CO')}</td>
+      <td class="p-3.5 text-emerald-600 dark:text-emerald-400 text-sm">$${gananciaTotal.toLocaleString('es-CO')}</td>
+    `;
+    listaInvsNombres.forEach(nom => {
+      const gan = invMap[nom] || 0;
+      tdHtml += `<td class="p-3.5 text-purple-700 dark:text-purple-300">$${gan.toLocaleString('es-CO')}</td>`;
+    });
+    tdHtml += `<td class="p-3.5 text-brand-600 dark:text-brand-400">$${erikaAdmin.toLocaleString('es-CO')}</td>`;
+    tblRow.innerHTML = tdHtml;
+  }
+
   // Gráfica de distribución financiera
   if (financialChartInstance) {
-    financialChartInstance.data.datasets[0].data = [admin, aux, inv];
+    const labels = ['Erika (Admin)'];
+    const data = [erikaAdmin];
+    const colors = ['#ec4899'];
+    const palette = ['#a855f7', '#8b5cf6', '#6366f1', '#3b82f6', '#14b8a6', '#f59e0b'];
+    let cIdx = 0;
+    listaInvsNombres.forEach(nom => {
+      const gan = invMap[nom] || 0;
+      if (gan > 0) {
+        labels.push(_etiquetaInv(nom));
+        data.push(gan);
+        colors.push(palette[cIdx % palette.length]);
+        cIdx++;
+      }
+    });
+    if (auxTotal > 0) {
+      labels.push('Auxiliares');
+      data.push(auxTotal);
+      colors.push('#3b82f6');
+    }
+    financialChartInstance.data.labels = labels;
+    financialChartInstance.data.datasets[0].data = data;
+    financialChartInstance.data.datasets[0].backgroundColor = colors;
     financialChartInstance.update();
   }
 }
@@ -267,17 +401,36 @@ async function reiniciarDia() {
 let paginaActual = 1;
 let totalPaginas = 1;
 
+// Registra los inversionistas encontrados en la página actual para encabezados
+let _historicoCols = []; // lista de nombres completos de inversionistas detectados
+
+function poblarFiltroInversionistas() {
+  const sel = document.getElementById('filtroInversionistaHistorico');
+  if (!sel) return;
+  const invs = (state.inversionistas || []).filter(i => Number(i.activo) === 1);
+  // Mantener opción "Todos" y reconstruir el resto
+  sel.innerHTML = '<option value="">Todos</option>';
+  invs.sort((a, b) => a.nombre.localeCompare(b.nombre)).forEach(inv => {
+    const opt = document.createElement('option');
+    opt.value = inv.id;
+    opt.textContent = _etiquetaInv(inv.nombre);
+    sel.appendChild(opt);
+  });
+}
+
 async function cargarHistorico(page = 1) {
   paginaActual = page;
   const inicio = document.getElementById('filtroFechaInicio')?.value;
   const fin = document.getElementById('filtroFechaFin')?.value;
   const tipo = document.getElementById('filtroTipoHistorico')?.value || 'todos';
   const busqueda = document.getElementById('filtroBusquedaHistorico')?.value.trim() || '';
+  const invId = document.getElementById('filtroInversionistaHistorico')?.value || '';
 
   let url = `/api/historico-ventas?page=${page}&tipo=${encodeURIComponent(tipo)}`;
   if (busqueda) url += `&q=${encodeURIComponent(busqueda)}`;
   if (inicio) url += `&inicio=${encodeURIComponent(inicio)}`;
   if (fin) url += `&fin=${encodeURIComponent(fin)}`;
+  if (invId) url += `&inv_id=${encodeURIComponent(invId)}`;
 
   const res = await fetch(url, { cache: 'no-store' });
   const result = await res.json();
@@ -287,52 +440,76 @@ async function cargarHistorico(page = 1) {
 
   tbody.innerHTML = '';
   totalPaginas = result.total_pages || 1;
+
   if (result.data.length === 0) {
     emptyMsg.classList.remove('hidden');
   } else {
     emptyMsg.classList.add('hidden');
+
+    // Detectar todos los inversionistas presentes en esta página
+    const invSet = new Set();
+    result.data.forEach(tx => {
+      (tx.inversionistas || []).forEach(inv => { if (inv.nombre) invSet.add(inv.nombre); });
+    });
+    _historicoCols = Array.from(invSet).sort();
+
+    // Actualizar encabezados dinámicos de inversionistas
+    const thInv1 = document.getElementById('thInv1');
+    const thInv2 = document.getElementById('thInv2');
+    if (thInv1) { thInv1.textContent = _historicoCols[0] ? _etiquetaInv(_historicoCols[0]) : ''; thInv1.style.display = _historicoCols[0] ? '' : 'none'; }
+    if (thInv2) { thInv2.textContent = _historicoCols[1] ? _etiquetaInv(_historicoCols[1]) : ''; thInv2.style.display = _historicoCols[1] ? '' : 'none'; }
+
     result.data.forEach(tx => {
       const esProducto = tx.tipo === 'producto';
-      let invHtml = '';
-      if (tx.inversionistas && tx.inversionistas.length > 0) {
-        invHtml = tx.inversionistas.map(inv => `
-          <div class="text-[11px] leading-tight mb-1">
-            <span class="font-bold text-purple-700 dark:text-purple-300">
-              <i class="fa-solid fa-user-tie text-[10px] mr-0.5"></i>${escapeHtml(inv.nombre)}:
-            </span>
-            <span class="font-bold text-gray-900 dark:text-white">$${Number(inv.costoInversion).toLocaleString('es-CO')}</span>
-            <span class="text-[10px] text-gray-400 block sm:inline">(Costo Inv)</span>
-          </div>
-        `).join('');
-      } else if (esProducto) {
-        const costo = Number(tx.inversionShare || 0);
-        invHtml = `<div class="text-[11px] leading-tight text-gray-500 dark:text-gray-400">
-          <span class="text-gray-400">Sin inv:</span>
-          <span class="font-semibold text-gray-700 dark:text-gray-300">$${costo.toLocaleString('es-CO')}</span>
-          <span class="text-[10px] text-gray-400 block sm:inline">(Costo Inv)</span>
-        </div>`;
-      } else {
-        const mat = Number(tx.materiaPrimaShare || 0);
-        invHtml = mat > 0 ? `<div class="text-[11px] leading-tight text-gray-500">
-          <span class="text-gray-400">Mat. prima:</span>
-          <span class="font-semibold text-gray-700 dark:text-gray-300">$${mat.toLocaleString('es-CO')}</span>
-        </div>` : '<span class="text-gray-400 text-xs">—</span>';
-      }
+
+      // Calcular columnas derivadas
+      const valorVenta   = Number(tx.total || 0);
+      const flete        = Number(tx.fleteTotal || 0);
+      const inversionShare = Number(tx.inversionShare || 0); // costo base puro + flete almacenado como inversion_share
+      // Valor Inicial = costo base sin flete = inversion_share - flete_total
+      const valorInicial = esProducto ? Math.max(inversionShare - flete, 0) : Number(tx.materiaPrimaShare || 0);
+      // Ganancia bruta = Valor Venta - Valor Inicial
+      const ganancia     = esProducto ? valorVenta - valorInicial : Number(tx.adminShare || 0) + Number(tx.auxShare || 0);
+      // Ganancia Total = Ganancia - Flete
+      const gananciaTotal = esProducto ? ganancia - flete : ganancia;
+      const adminShare   = Number(tx.adminShare || 0);
+      const auxShare     = Number(tx.auxShare || 0);
+
+      // Mapa de ganancia por inversionista
+      const invMap = {};
+      (tx.inversionistas || []).forEach(inv => {
+        invMap[inv.nombre] = Number(inv.ganancia || 0);
+      });
+
+      // Celdas dinámicas para cada inversionista
+      const tdInv1 = _historicoCols[0] != null
+        ? `<td class="p-4 font-semibold text-purple-700 dark:text-purple-300" style="display:${thInv1 && thInv1.style.display !== 'none' ? '' : 'none'}">` +
+          (esProducto ? `$${(invMap[_historicoCols[0]] || 0).toLocaleString('es-CO')}` : '—') + `</td>`
+        : `<td style="display:none"></td>`;
+      const tdInv2 = _historicoCols[1] != null
+        ? `<td class="p-4 font-semibold text-purple-700 dark:text-purple-300" style="display:${thInv2 && thInv2.style.display !== 'none' ? '' : 'none'}">` +
+          (esProducto ? `$${(invMap[_historicoCols[1]] || 0).toLocaleString('es-CO')}` : '—') + `</td>`
+        : `<td style="display:none"></td>`;
 
       const tr = document.createElement('tr');
       tr.className = "hover:bg-gray-50 dark:hover:bg-gray-800/40 transition";
       tr.innerHTML = `
-        <td class="p-4 font-mono font-medium text-gray-500">${escapeHtml(tx.fechaHora)}<br><span class="text-[9px] text-gray-400">${escapeHtml(tx.id)}</span></td>
+        <td class="p-4 font-mono font-medium text-gray-500 whitespace-nowrap">${escapeHtml(tx.fechaHora)}<br><span class="text-[9px] text-gray-400">${escapeHtml(tx.id)}</span></td>
         <td class="p-4 font-medium text-gray-900 dark:text-white">${escapeHtml(tx.cliente)}</td>
         <td class="p-4">
           <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${esProducto ? 'bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300' : 'bg-brand-100 text-brand-700 dark:bg-brand-950 dark:text-brand-300'}">${esProducto ? 'Producto' : 'Servicio'}</span>
-          <div class="mt-1">${escapeHtml(tx.tipoServicio)}</div>
+          <div class="mt-1 text-xs">${escapeHtml(tx.tipoServicio)}</div>
           ${tx.auxiliares?.length ? `<div class="mt-1 text-[10px] text-blue-600 dark:text-blue-400">Aux: ${tx.auxiliares.map(a => `${escapeHtml(a.nombre)} (${Number(a.porcentaje).toFixed(2)}%)`).join(', ')}</div>` : ''}
         </td>
-        <td class="p-4 font-bold text-gray-900 dark:text-white">$${Number(tx.total).toLocaleString('es-CO')}</td>
-        <td class="p-4 text-brand-600 font-semibold">$${Number(tx.adminShare).toLocaleString('es-CO')}</td>
-        <td class="p-4 text-blue-600 font-semibold">$${Number(tx.auxShare).toLocaleString('es-CO')}</td>
-        <td class="p-4">${invHtml}</td>
+        <td class="p-4 font-bold text-gray-900 dark:text-white whitespace-nowrap">$${valorVenta.toLocaleString('es-CO')}</td>
+        <td class="p-4 text-orange-600 font-semibold whitespace-nowrap">${esProducto ? `$${valorInicial.toLocaleString('es-CO')}` : '—'}</td>
+        <td class="p-4 text-green-600 font-semibold whitespace-nowrap">${esProducto ? `$${ganancia.toLocaleString('es-CO')}` : '—'}</td>
+        <td class="p-4 text-red-500 font-semibold whitespace-nowrap">${esProducto ? `$${flete.toLocaleString('es-CO')}` : '—'}</td>
+        <td class="p-4 text-emerald-700 font-bold whitespace-nowrap">${esProducto ? `$${gananciaTotal.toLocaleString('es-CO')}` : '—'}</td>
+        ${tdInv1}
+        ${tdInv2}
+        <td class="p-4 text-brand-600 font-semibold whitespace-nowrap">$${adminShare.toLocaleString('es-CO')}</td>
+        <td class="p-4 text-blue-600 font-semibold whitespace-nowrap">${auxShare > 0 ? `$${auxShare.toLocaleString('es-CO')}` : '—'}</td>
         <td class="p-4 text-center whitespace-nowrap">
           <button onclick="editarTransaccion('${escapeHtml(tx.id)}')" class="text-brand-600 hover:text-brand-800 dark:text-brand-400 p-1.5 rounded-lg hover:bg-brand-50 dark:hover:bg-brand-950/40 transition" title="Editar venta"><i class="fa-solid fa-pen"></i></button>
           <button onclick="eliminarTransaccion('${escapeHtml(tx.id)}')" class="text-red-400 hover:text-red-600 dark:text-red-400 p-1.5 ml-1 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/40 transition" title="Eliminar registro"><i class="fa-solid fa-trash-can"></i></button>
@@ -358,6 +535,8 @@ function limpiarFiltros() {
   document.getElementById('filtroTipoHistorico').value = 'todos';
   const busqueda = document.getElementById('filtroBusquedaHistorico');
   if (busqueda) busqueda.value = '';
+  const invSel = document.getElementById('filtroInversionistaHistorico');
+  if (invSel) invSel.value = '';
   cargarHistorico(1);
 }
 
@@ -366,10 +545,12 @@ function exportarExcel() {
   const fin = document.getElementById('filtroFechaFin').value;
   const tipo = document.getElementById('filtroTipoHistorico')?.value || 'todos';
   const busqueda = document.getElementById('filtroBusquedaHistorico')?.value.trim() || '';
+  const invId = document.getElementById('filtroInversionistaHistorico')?.value || '';
   let url = `/api/exportar-ventas-excel?tipo=${encodeURIComponent(tipo)}`;
   if (busqueda) url += `&q=${encodeURIComponent(busqueda)}`;
   if (inicio) url += `&inicio=${encodeURIComponent(inicio)}`;
   if (fin) url += `&fin=${encodeURIComponent(fin)}`;
+  if (invId) url += `&inv_id=${encodeURIComponent(invId)}`;
   window.location.href = url;
 }
 
@@ -470,8 +651,8 @@ function actualizarFilaProductoEdicion(row, usarPrecioCatalogo = false) {
   const prod = productoCatalogoPorId(prodId);
   const pres = presentacionCatalogoPorId(prod, presId);
   const cantidadEl = row.querySelector('.edit-prod-cantidad');
-  const factor = Number(row.dataset.factor || pres?.factor || 1) || 1;
   if (pres) row.dataset.factor = pres.factor;
+  const factor = Number(row.dataset.factor || pres?.factor || 1) || 1;
 
   if (usarPrecioCatalogo && pres) {
     const c = componentesCatalogoPresentacion(prod, presId);
@@ -482,9 +663,9 @@ function actualizarFilaProductoEdicion(row, usarPrecioCatalogo = false) {
   }
 
   const cantidad = Math.max(parseInt(cantidadEl?.value || '1', 10) || 1, 1);
-  const precioPresentacion = precioFinalFila(row);
-  const subtotal = precioPresentacion * cantidad;
   const unidades = cantidad * factor;
+  const precioUnitario = precioFinalFila(row);
+  const subtotal = precioUnitario * unidades;
   const totalEl = row.querySelector('.edit-prod-total');
   const unidadesEl = row.querySelector('.edit-prod-unidades');
   if (totalEl) totalEl.textContent = `$${subtotal.toLocaleString('es-CO')}`;
@@ -567,14 +748,23 @@ function guardarPrecioPopup() {
 function inicializarComponentesFila(row, item = null, prod = null, presId = '') {
   if (item) {
     const factor = Number(item.factor_presentacion || 1) || 1;
-    const cantidadPresentaciones = Math.max(Number(item.unidades || 0) / factor, 1);
-    let base = Number(item.costo_inversion || 0) / cantidadPresentaciones;
-    let admin = Number(item.ganancia_admin || 0) / cantidadPresentaciones;
-    let inv = Number(item.ganancia_inversionista || 0) / cantidadPresentaciones;
-    let flete = Number(item.flete || 0) / cantidadPresentaciones;
-    const finalGuardado = Number(item.precio_unitario || 0) * factor;
-    if ((base + admin + inv + flete) <= 0 && finalGuardado > 0) {
-      admin = Math.max(finalGuardado - base - inv - flete, 0);
+    const unidades = Math.max(Number(item.unidades || 1), 1);
+    let base = Number(item.costo_inversion || 0) / unidades;
+    let inv = Number(item.ganancia_inversionista || 0) / unidades;
+    let admin = Number(item.ganancia_admin || 0);
+    let flete = Number(item.flete || 0);
+    const pu = Number(item.precio_unitario || 0);
+    if (unidades > 1) {
+      if (Math.abs((base + inv + (admin / unidades) + (flete / unidades)) - pu) < 1) {
+        admin = admin / unidades;
+        flete = flete / unidades;
+      } else if (admin >= pu) {
+        admin = admin / unidades;
+        flete = flete / unidades;
+      }
+    }
+    if ((base + admin + inv + flete) <= 0 && pu > 0) {
+      admin = Math.max(pu - base - inv - flete, 0);
     }
     row.dataset.precioBase = base;
     row.dataset.precioAdmin = admin;
@@ -653,11 +843,13 @@ function actualizarResumenEdicion() {
   let ganInv = 0;
   rows.forEach(row => {
     const cantidad = Math.max(parseInt(row.querySelector('.edit-prod-cantidad')?.value || '1', 10) || 1, 1);
+    const factor = Number(row.dataset.factor || 1) || 1;
+    const unidades = cantidad * factor;
     const c = componentesFilaPrecio(row);
-    total += (c.base + c.admin + c.inv + c.flete) * cantidad;
-    admin += c.admin * cantidad;
-    inversion += (c.base + c.flete) * cantidad;
-    ganInv += c.inv * cantidad;
+    total += (c.base + c.admin + c.inv + c.flete) * unidades;
+    admin += c.admin * unidades;
+    inversion += (c.base + c.flete) * unidades;
+    ganInv += c.inv * unidades;
   });
   const fmt = v => `$${Number(v || 0).toLocaleString('es-CO')}`;
   const totalEl = document.getElementById('editResumenTotal');
@@ -711,18 +903,18 @@ async function guardarEdicionTransaccion(event) {
     payload.items = rows.map(row => {
       const factor = Number(row.dataset.factor || 1) || 1;
       const c = componentesFilaPrecio(row);
-      const precioPresentacion = c.base + c.admin + c.inv + c.flete;
+      const precioUnitario = c.base + c.admin + c.inv + c.flete;
       return {
         id: row.dataset.itemId ? Number(row.dataset.itemId) : null,
         productoId: row.querySelector('.edit-prod-id')?.value || '',
         presentacionId: row.querySelector('.edit-pres-id')?.value || '',
         cantidad: Math.max(parseInt(row.querySelector('.edit-prod-cantidad')?.value || '1', 10) || 1, 1),
-        precioUnitario: precioPresentacion / factor,
+        precioUnitario: precioUnitario,
         precioBase: c.base,
         gananciaAdmin: c.admin,
         gananciaInv: c.inv,
         flete: c.flete,
-        precioFinal: precioPresentacion
+        precioFinal: precioUnitario
       };
     });
   } else {
