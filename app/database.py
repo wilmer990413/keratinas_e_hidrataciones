@@ -332,6 +332,54 @@ def _crear_tablas_agenda(cursor):
          ("EST-CANCELADA", "Cancelada", "#FFA6A6", 3)])
 
 
+def _crear_tablas_caja(cursor):
+  """Crea tablas para control de egresos, bolsillos de dinero y cierres de caja diarios."""
+  cursor.execute("""
+    CREATE TABLE IF NOT EXISTS caja_egresos (
+      id TEXT PRIMARY KEY,
+      jornada_id TEXT,
+      fecha TEXT NOT NULL,
+      fecha_dia TEXT NOT NULL,
+      bolsillo TEXT NOT NULL,
+      categoria TEXT NOT NULL,
+      descripcion TEXT NOT NULL,
+      monto REAL NOT NULL DEFAULT 0,
+      inversionista_id TEXT,
+      inversionista_nombre TEXT,
+      creado_en TEXT NOT NULL,
+      activo INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY(inversionista_id) REFERENCES inversionistas(id)
+    )
+  """)
+  cursor.execute("CREATE INDEX IF NOT EXISTS idx_caja_egresos_dia ON caja_egresos(fecha_dia)")
+  cursor.execute("CREATE INDEX IF NOT EXISTS idx_caja_egresos_bolsillo ON caja_egresos(bolsillo)")
+
+  cursor.execute("""
+    CREATE TABLE IF NOT EXISTS caja_cierres (
+      id TEXT PRIMARY KEY,
+      jornada_id TEXT,
+      fecha_dia TEXT NOT NULL UNIQUE,
+      fecha_cierre TEXT NOT NULL,
+      total_ingresos REAL NOT NULL DEFAULT 0,
+      total_egresos REAL NOT NULL DEFAULT 0,
+      saldo_teorico REAL NOT NULL DEFAULT 0,
+      saldo_real_banco REAL NOT NULL DEFAULT 0,
+      diferencia REAL NOT NULL DEFAULT 0,
+      total_flete_cobrado REAL NOT NULL DEFAULT 0,
+      egresos_flete REAL NOT NULL DEFAULT 0,
+      saldo_flete REAL NOT NULL DEFAULT 0,
+      total_reinversion_cobrado REAL NOT NULL DEFAULT 0,
+      egresos_reinversion REAL NOT NULL DEFAULT 0,
+      saldo_reinversion REAL NOT NULL DEFAULT 0,
+      ganancia_admin REAL NOT NULL DEFAULT 0,
+      ganancias_inversionistas_json TEXT,
+      observaciones TEXT,
+      cerrado_por TEXT DEFAULT 'Administrador'
+    )
+  """)
+  cursor.execute("CREATE INDEX IF NOT EXISTS idx_caja_cierres_dia ON caja_cierres(fecha_dia)")
+
+
 def init_db():
   conn = get_db_connection()
   cursor = conn.cursor()
@@ -637,6 +685,7 @@ def init_db():
   _migrar_presentaciones(cursor)
   _asegurar_presentaciones_para_productos(cursor)
   _crear_tablas_agenda(cursor)
+  _crear_tablas_caja(cursor)
 
   try:
     cursor.execute("UPDATE venta_items SET producto_id = (SELECT producto_id FROM producto_id_aliases a WHERE a.old_producto_id = venta_items.producto_id) WHERE producto_id IN (SELECT old_producto_id FROM producto_id_aliases)")

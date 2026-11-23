@@ -54,6 +54,10 @@ async function cargarEstadoBackend() {
   renderTablaTransacciones();
 }
 
+function mostrarNotificacion(mensaje, tipo = 'info') {
+  showAlert(mensaje, tipo);
+}
+
 function switchTab(tabId) {
   document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
   document.querySelectorAll('.nav-btn').forEach(el => {

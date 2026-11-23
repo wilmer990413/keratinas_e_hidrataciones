@@ -27,6 +27,7 @@ def create_app():
     from app.routes.api_combos import api_combos_bp
     from app.routes.api_inversionistas import api_inversionistas_bp
     from app.routes.api_citas import api_citas_bp
+    from app.routes.api_caja import api_caja_bp
 
     app.register_blueprint(main_bp)
     app.register_blueprint(api_productos_bp)
@@ -36,5 +37,6 @@ def create_app():
     app.register_blueprint(api_combos_bp)
     app.register_blueprint(api_inversionistas_bp)
     app.register_blueprint(api_citas_bp)
+    app.register_blueprint(api_caja_bp)
 
     return app
